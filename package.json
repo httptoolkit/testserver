@@ -1,0 +1,36 @@
+{
+  "name": "@httptoolkit/testserver",
+  "version": "0.0.0",
+  "description": "A public test server for HTTP & related protocols, similar to httpbin.org (but actively maintained)",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "start:dev": "tsx --watch src/server.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/httptoolkit/testserver.git"
+  },
+  "keywords": [
+    "http",
+    "network",
+    "tcp",
+    "tls",
+    "test",
+    "errors",
+    "debug"
+  ],
+  "author": "Tim Perry <tim@httptoolkit.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/httptoolkit/testserver/issues"
+  },
+  "homepage": "https://github.com/httptoolkit/testserver#readme",
+  "dependencies": {
+    "tsx": "^4.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "typescript": "^5.4.3"
+  }
+}
