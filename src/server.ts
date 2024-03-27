@@ -49,13 +49,15 @@ tcpServer.on('connection', (conn) => {
         conn.pendingInput?.push(data);
     });
 
+    conn.on('error', (err) => console.error('TCP socket error', err));
+
     const duplex = stream.Duplex.from({ writable: conn, readable: conn });
     duplex.pendingInput = conn.pendingInput;
     httpServer.emit('connection', duplex);
 });
-tcpServer.on('error', (err) => {
-    console.error(err);
-});
+
+httpServer.on('error', (err) => console.error('HTTP server error', err));
+tcpServer.on('error', (err) => console.error('TCP server error', err));
 
 const port = process.env.PORT ?? 3000;
 tcpServer.listen(port, () => {
