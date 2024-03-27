@@ -14,13 +14,25 @@ const clearArray = (array: Array<unknown> | undefined) => {
     array.length = 0;
 }
 
+const logEmits = (name, emitter) => {
+    const originalEmit = emitter.emit;
+    emitter.emit = function () {
+        const eventType = arguments[0];
+        console.log(`${name} fired ${eventType}`);
+        return originalEmit.apply(this, arguments);
+    };
+}
+
 const httpServer = new http.Server(async (req, res) => {
     console.log(`Handling request to ${req.url}`);
 
     if (req.url === '/echo') {
         await streamConsumers.buffer(req); // Wait for all request data
-        res.writeHead(200);
-        res.end(Buffer.concat(req.socket.pendingInput ?? []));
+        const input = Buffer.concat(req.socket.pendingInput ?? []);
+        res.writeHead(200, {
+            'Content-Length': Buffer.byteLength(input)
+        });
+        res.end(input);
     } else {
         res.writeHead(404);
         res.end(`No handler for ${req.url}`);
@@ -41,7 +53,6 @@ tcpServer.on('connection', (conn) => {
     duplex.pendingInput = conn.pendingInput;
     httpServer.emit('connection', duplex);
 });
-
 tcpServer.on('error', (err) => {
     console.error(err);
 });
