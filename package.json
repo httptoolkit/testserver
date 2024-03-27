@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",
-    "start:dev": "tsx --watch src/server.ts"
+    "start:dev": "tsx --watch src/server.ts",
+    "build": "tsc",
+    "test": "mocha -r tsx test/**/*.spec.ts"
   },
   "repository": {
     "type": "git",
@@ -31,7 +33,12 @@
     "tsx": "^4.7.1"
   },
   "devDependencies": {
+    "@types/chai": "^4.3.14",
+    "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.30",
+    "chai": "^5.1.0",
+    "destroyable-server": "^1.0.1",
+    "mocha": "^10.4.0",
     "typescript": "^5.4.3"
   }
 }
