@@ -1,10 +1,14 @@
 import * as net from 'net';
+import * as http from 'http';
+import * as https from 'https';
+import * as streamConsumers from 'stream/consumers';
+
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
 import { createServer } from '../src/server';
 
-describe("Echo endpoint", () => {
+describe("HTTPS requests", () => {
 
     let server: DestroyableServer;
     let serverPort: number;
@@ -19,27 +23,27 @@ describe("Echo endpoint", () => {
         await server.destroy();
     })
 
-    it("echoes a response", async () => {
-        const address = `http://localhost:${serverPort}/echo`;
-        const response = await fetch(address, {
+    it("can connect successfully", async () => {
+        const address = `https://localhost:${serverPort}/echo`;
+        const request = https.get(address, {
             headers: {
                 'test-HEADER': 'abc'
-            }
+            },
+            rejectUnauthorized: false // Needed as it's untrusted
         });
 
-        expect(response.status).to.equal(200);
+        const response = await new Promise<http.IncomingMessage>((resolve) =>
+            request.on('response', resolve)
+        );
 
-        const rawBody = await response.text();
+        expect(response.statusCode).to.equal(200);
+
+        const rawBody = await streamConsumers.text(response);
         expect(rawBody).to.equal(
 `GET /echo HTTP/1.1
-host: localhost:${serverPort}
-connection: keep-alive
 test-HEADER: abc
-accept: */*
-accept-language: *
-sec-fetch-mode: cors
-user-agent: node
-accept-encoding: gzip, deflate
+Host: localhost:${serverPort}
+Connection: keep-alive
 
 `.replace(/\n/g, '\r\n')
         );

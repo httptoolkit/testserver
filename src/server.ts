@@ -1,54 +1,49 @@
 import * as net from 'net';
-import * as http from 'http';
-import * as stream from 'stream';
-import * as streamConsumers from 'stream/consumers';
+
+import { createHttpHandler } from './http-handler.js';
+import { createTlsHandler } from './tls-handler.js';
+import { LocalCA, generateCACertificate } from './local-ca.js';
+import { ConnectionProcessor } from './process-connection.js';
 
 declare module 'stream' {
     interface Duplex {
-        pendingInput?: Buffer[];
+        receivedData?: Buffer[];
     }
 }
 
-const clearArray = (array: Array<unknown> | undefined) => {
-    if (!array) return;
-    array.length = 0;
+
+interface ServerOptions {
+    domain?: string;
 }
 
-const createServer = () => {
-    const httpServer = new http.Server(async (req, res) => {
-        console.log(`Handling request to ${req.url}`);
+async function generateTlsConfig(options: ServerOptions) {
+    const caCert = await generateCACertificate();
 
-        if (req.url === '/echo') {
-            await streamConsumers.buffer(req); // Wait for all request data
-            const input = Buffer.concat(req.socket.pendingInput ?? []);
-            res.writeHead(200, {
-                'Content-Length': Buffer.byteLength(input)
-            });
-            res.end(input);
-        } else {
-            res.writeHead(404);
-            res.end(`No handler for ${req.url}`);
-        }
+    const ca = new LocalCA(caCert);
 
-        clearArray(req.socket.pendingInput);
-    });
+    const defaultCert = ca.generateCertificate(options.domain ?? 'localhost');
+
+    return {
+        key: defaultCert.key,
+        cert: defaultCert.cert,
+        ca: caCert.cert,
+        generateCertificate: (domain: string) => ca.generateCertificate(domain)
+    };
+}
+
+const createServer = async (options: ServerOptions = {}) => {
+    const connProcessor = new ConnectionProcessor(
+        (conn) => tlsHandler.emit('connection', conn),
+        (conn) => httpHandler.emit('connection', conn)
+    );
 
     const tcpServer = net.createServer();
-    tcpServer.on('connection', (conn) => {
-        conn.pendingInput = [];
+    const httpHandler = createHttpHandler();
 
-        conn.on('data', (data) => {
-            conn.pendingInput?.push(data);
-        });
+    const tlsConfig = await generateTlsConfig(options);
+    const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 
-        conn.on('error', (err) => console.error('TCP socket error', err));
-
-        const duplex = stream.Duplex.from({ writable: conn, readable: conn });
-        duplex.pendingInput = conn.pendingInput;
-        httpServer.emit('connection', duplex);
-    });
-
-    httpServer.on('error', (err) => console.error('HTTP server error', err));
+    tcpServer.on('connection', (conn) => connProcessor.processConnection(conn));
     tcpServer.on('error', (err) => console.error('TCP server error', err));
 
     return tcpServer;
@@ -60,8 +55,12 @@ export { createServer };
 const wasRunDirectly = import.meta.filename === process?.argv[1];
 if (wasRunDirectly) {
     const port = process.env.PORT ?? 3000;
-    const server = createServer();
-    server.listen(port, () => {
-        console.log(`Testserver listening on port ${port}`);
+
+    const domain = process.env.ROOT_DOMAIN;
+
+    createServer({ domain }).then((server) => {
+        server.listen(port, () => {
+            console.log(`Testserver listening on port ${port}`);
+        });
     });
 }
