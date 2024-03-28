@@ -31,7 +31,7 @@ async function generateTlsConfig(options: ServerOptions) {
     };
 }
 
-const createServer = async (options: ServerOptions = {}) => {
+const createTcpHandler = async (options: ServerOptions = {}) => {
     const connProcessor = new ConnectionProcessor(
         (conn) => tlsHandler.emit('connection', conn),
         (conn) => httpHandler.emit('connection', conn)
@@ -43,24 +43,33 @@ const createServer = async (options: ServerOptions = {}) => {
     const tlsConfig = await generateTlsConfig(options);
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 
-    tcpServer.on('connection', (conn) => connProcessor.processConnection(conn));
-    tcpServer.on('error', (err) => console.error('TCP server error', err));
-
-    return tcpServer;
+    return (conn: net.Socket) => connProcessor.processConnection(conn);
 };
 
-export { createServer };
+function createTcpServer(handler: (conn: net.Socket) => void) {
+    const server = net.createServer(handler);
+    server.on('error', (err) => console.log('TCP server error', err));
+    return server;
+}
+
+export async function createServer(options: ServerOptions = {}) {
+    const tcpHandler = await createTcpHandler(options as ServerOptions);
+    return createTcpServer(tcpHandler);
+}
 
 // This is not a perfect test (various odd cases) but good enough
 const wasRunDirectly = import.meta.filename === process?.argv[1];
 if (wasRunDirectly) {
-    const port = process.env.PORT ?? 3000;
+    const ports = process.env.PORTS?.split(',') ?? [3000];
 
     const domain = process.env.ROOT_DOMAIN;
 
-    createServer({ domain }).then((server) => {
-        server.listen(port, () => {
-            console.log(`Testserver listening on port ${port}`);
+    createTcpHandler({ domain }).then((tcpHandler) => {
+        ports.forEach((port) => {
+            const server = createTcpServer(tcpHandler);
+            server.listen(port, () => {
+                console.log(`Testserver listening on port ${port}`);
+            });
         });
     });
 }
