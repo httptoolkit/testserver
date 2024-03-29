@@ -95,10 +95,11 @@ const wasRunDirectly = import.meta.filename === process?.argv[1];
 if (wasRunDirectly) {
     const ports = process.env.PORTS?.split(',') ?? [3000];
 
-    const domain = process.env.ROOT_DOMAIN;
-    const enableACME = process.env.ENABLE_ACME === 'true';
-
-    createTcpHandler({ domain, enableACME }).then((tcpHandler) => {
+    createTcpHandler({
+        domain: process.env.ROOT_DOMAIN,
+        enableACME: process.env.ENABLE_ACME === 'true',
+        certCacheDir: process.env.CERT_CACHE_DIR
+    }).then((tcpHandler) => {
         ports.forEach((port) => {
             const server = createTcpServer(tcpHandler);
             server.listen(port, () => {
