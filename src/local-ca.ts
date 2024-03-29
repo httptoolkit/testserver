@@ -36,7 +36,7 @@ export interface CAOptions {
 
 export type PEM = string | string[] | Buffer | Buffer[];
 
-export type GeneratedCertificate = {
+type GeneratedCertificate = {
     key: string,
     cert: string,
     ca: string
@@ -132,12 +132,11 @@ export class LocalCA {
     private caKey: forge.pki.PrivateKey;
     private options: CAOptions;
 
-    private certCache: { [domain: string]: GeneratedCertificate };
+    private certCache: { [domain: string]: GeneratedCertificate } = {};
 
     constructor(options: CAOptions) {
         this.caKey = pki.privateKeyFromPem(options.key.toString());
         this.caCert = pki.certificateFromPem(options.cert.toString());
-        this.certCache = {};
         this.options = options ?? {};
 
         const keyLength = options.keyLength || 2048;

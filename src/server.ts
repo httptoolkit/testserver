@@ -4,6 +4,7 @@ import { createHttpHandler } from './http-handler.js';
 import { createTlsHandler } from './tls-handler.js';
 import { LocalCA, generateCACertificate } from './local-ca.js';
 import { ConnectionProcessor } from './process-connection.js';
+import { buildAcmeCA } from './acme.js';
 
 declare module 'stream' {
     interface Duplex {
@@ -14,21 +15,52 @@ declare module 'stream' {
 
 interface ServerOptions {
     domain?: string;
+    enableACME?: boolean;
+    certCacheDir?: string;
 }
 
 async function generateTlsConfig(options: ServerOptions) {
+    const rootDomain = options.domain ?? 'localhost';
     const caCert = await generateCACertificate();
 
     const ca = new LocalCA(caCert);
+    const defaultCert = ca.generateCertificate(rootDomain);
 
-    const defaultCert = ca.generateCertificate(options.domain ?? 'localhost');
+    if (!options.enableACME) {
+        return {
+            key: defaultCert.key,
+            cert: defaultCert.cert,
+            ca: caCert.cert,
+            generateCertificate: (domain: string) => ca.generateCertificate(domain),
+            acmeChallenge: () => undefined // Not supported
+        };
+    }
+
+    if (!options.domain) {
+        throw new Error(`Can't enable ACME without configuring a domain (via $ROOT_DOMAIN)`);
+    }
+    if (!options.certCacheDir) {
+        throw new Error(`Can't enable ACME without configuring a cert cache directory (via $CERT_CACHE_DIR)`);
+    }
+
+    const acmeCA = await buildAcmeCA(options.certCacheDir);
 
     return {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
-        generateCertificate: (domain: string) => ca.generateCertificate(domain)
-    };
+        generateCertificate: (certDomain: string) => {
+            if (certDomain.endsWith('.' + rootDomain)) {
+                const cert = acmeCA.tryGetCertificateSync(certDomain);
+                if (cert) return cert;
+            }
+
+            // If you use some other domain or the cert isn't immediately available, we fall back
+            // to self-signed certs for now:
+            return ca.generateCertificate(certDomain);
+        },
+        acmeChallenge: (token: string) => acmeCA.getChallengeResponse(token)
+    }
 }
 
 const createTcpHandler = async (options: ServerOptions = {}) => {
@@ -37,11 +69,12 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
         (conn) => httpHandler.emit('connection', conn)
     );
 
-    const tcpServer = net.createServer();
-    const httpHandler = createHttpHandler();
-
     const tlsConfig = await generateTlsConfig(options);
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
+
+    const httpHandler = createHttpHandler({
+        acmeChallengeCallback: tlsConfig.acmeChallenge
+    });
 
     return (conn: net.Socket) => connProcessor.processConnection(conn);
 };
@@ -63,8 +96,9 @@ if (wasRunDirectly) {
     const ports = process.env.PORTS?.split(',') ?? [3000];
 
     const domain = process.env.ROOT_DOMAIN;
+    const enableACME = process.env.ENABLE_ACME === 'true';
 
-    createTcpHandler({ domain }).then((tcpHandler) => {
+    createTcpHandler({ domain, enableACME }).then((tcpHandler) => {
         ports.forEach((port) => {
             const server = createTcpServer(tcpHandler);
             server.listen(port, () => {

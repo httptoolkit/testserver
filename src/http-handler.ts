@@ -3,11 +3,23 @@ import * as streamConsumers from 'stream/consumers';
 
 import { clearArray } from './util.js';
 
-export function createHttpHandler() {
+export function createHttpHandler(options: {
+    acmeChallengeCallback: (token: string) => string | undefined
+}) {
     const handler = new http.Server(async (req, res) => {
         console.log(`Handling request to ${req.url}`);
 
-        if (req.url === '/echo') {
+        if (req.url?.startsWith('/.well-known/acme-challenge/')) {
+            const token = req.url.split('/')[3];
+            const response = options.acmeChallengeCallback(token);
+            if (response) {
+                res.writeHead(200);
+                res.end(response);
+            } else {
+                res.writeHead(404);
+                res.end('Unrecognized ACME challenge request');
+            }
+        } else if (req.url === '/echo') {
             await streamConsumers.buffer(req); // Wait for all request data
             const input = Buffer.concat(req.socket.receivedData ?? []);
             res.writeHead(200, {

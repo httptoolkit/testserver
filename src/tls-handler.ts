@@ -9,7 +9,7 @@ interface TlsHandlerConfig {
     generateCertificate: (domain: string) => {
         key: string,
         cert: string,
-        ca: string
+        ca?: string
     };
 }
 
