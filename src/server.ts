@@ -50,7 +50,7 @@ async function generateTlsConfig(options: ServerOptions) {
         cert: defaultCert.cert,
         ca: caCert.cert,
         generateCertificate: (certDomain: string) => {
-            if (certDomain.endsWith('.' + rootDomain)) {
+            if (certDomain === rootDomain || certDomain.endsWith('.' + rootDomain)) {
                 const cert = acmeCA.tryGetCertificateSync(certDomain);
                 if (cert) return cert;
             }
