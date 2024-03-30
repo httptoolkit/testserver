@@ -62,7 +62,7 @@ export class AcmeCA {
 
     private readonly acmeClient = ACME.crypto.createPrivateKey().then(
         (accountKey) => new ACME.Client({
-            directoryUrl: ACME.directory.letsencrypt.staging,
+            directoryUrl: ACME.directory.letsencrypt.production,
             accountKey
         })
     );
