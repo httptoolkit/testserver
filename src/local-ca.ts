@@ -56,7 +56,7 @@ export async function generateCACertificate(options: {
 } = {}) {
     options = {
         commonName: 'Test Certificate Authority',
-        organizationName: 'Mockttp',
+        organizationName: 'Testserver',
         countryName: 'XX', // ISO-3166-1 alpha-2 'unknown country' code
         bits: 2048,
         ...options
@@ -191,7 +191,7 @@ export class LocalCA {
             ),
             { name: 'countryName', value: this.options?.countryName ?? 'XX' }, // ISO-3166-1 alpha-2 'unknown country' code
             { name: 'localityName', value: this.options?.localityName ?? 'Unknown' },
-            { name: 'organizationName', value: this.options?.organizationName ?? 'Mockttp Cert - DO NOT TRUST' }
+            { name: 'organizationName', value: this.options?.organizationName ?? 'Testserver Test Cert' }
         ]);
         cert.setIssuer(this.caCert.subject.attributes);
 
