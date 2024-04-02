@@ -44,6 +44,7 @@ async function generateTlsConfig(options: ServerOptions) {
     }
 
     const acmeCA = await buildAcmeCA(options.certCacheDir);
+    acmeCA.tryGetCertificateSync(rootDomain); // Preload the root domain every time
 
     return {
         key: defaultCert.key,

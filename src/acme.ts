@@ -36,6 +36,8 @@ export async function buildAcmeCA(certCacheDir: string) {
             if (!data.cert) throw new Error('No cert in cert file');
             if (!data.expiry) throw new Error('No expiry in cert file');
 
+            console.log(`Loaded cached cert for ${data.domain}`);
+
             return [
                 data.domain,
                 { key: data.key, cert: data.cert, expiry: data.expiry }
