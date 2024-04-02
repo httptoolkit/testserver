@@ -55,8 +55,11 @@ export function createHttpHandler(options: {
 
             // Now we begin the various test endpoints themselves:
             allowCORS(req, res);
-
-            if (path === '/echo') {
+            if (req.method === 'OPTIONS') {
+                // Handle preflight CORS requests for everything
+                res.writeHead(200);
+                res.end();
+            } else if (path === '/echo') {
                 await streamConsumers.buffer(req); // Wait for all request data
                 const input = Buffer.concat(req.socket.receivedData ?? []);
                 res.writeHead(200, {
