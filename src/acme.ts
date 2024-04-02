@@ -45,7 +45,7 @@ export async function buildAcmeCA(certCacheDir: string) {
         } catch (e) {
             console.log(`Could not load cert from ${certPath}:`, e);
         }
-    }).filter(x => !!x))) as Array<[string, GeneratedCertificate]>;
+    }))).filter(x => !!x) as Array<[string, GeneratedCertificate]>;
 
     const certCache = Object.fromEntries(certs);
 
@@ -131,7 +131,7 @@ export class AcmeCA {
                 delete this.pendingCertRenewals[domain];
                 this.certCache[domain] = certData;
 
-                fs.writeFile(path.join(this.certCacheDir, `${domain}.json.pem`), JSON.stringify({
+                fs.writeFile(path.join(this.certCacheDir, `${domain}.cert.json`), JSON.stringify({
                     ...certData,
                     domain
                 })).catch((e) => {
@@ -141,6 +141,7 @@ export class AcmeCA {
                 return certData;
             })
             .catch((e) => {
+                console.log('Cert request failed', e);
                 return this.getCertificate(domain, { forceRegenerate: true });
             })
 
