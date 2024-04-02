@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as streamConsumers from 'stream/consumers';
+import { delay } from '@httptoolkit/util';
 
 import { clearArray } from './util.js';
 
@@ -62,7 +63,10 @@ export function createHttpHandler(options: {
                     'Content-Length': Buffer.byteLength(input)
                 });
                 res.end(input);
-            } else if (path.match(/^\/anything(\/|$)/)) {
+            }
+
+            // --- Now we start on the httpbin.org endpoints ---
+            else if (path.match(/^\/anything(\/|$)/)) {
                 await anythingEndpoint(req, res);
             } else if (http.METHODS.includes(path.slice(1))) {
                 const method = path.slice(1);
@@ -81,7 +85,31 @@ export function createHttpHandler(options: {
                     res.writeHead(statusCode);
                     res.end();
                 }
-            } else {
+            } else if (path === '/headers') {
+                return anythingEndpoint(req, res, { fieldFilter: ["headers"] });
+            } else if (path === '/ip') {
+                return anythingEndpoint(req, res, { fieldFilter: ["origin"] });
+            } else if (path === '/user-agent') {
+                res.writeHead(200);
+                res.end('');
+            } else if (path.startsWith('/delay/')) {
+                const delayMs = parseFloat(path.slice('/delay/'.length));
+
+                if (isNaN(delayMs)) {
+                    res.writeHead(400);
+                    res.end('Invalid delay duration');
+                }
+
+                await delay(Math.min(delayMs, 10 * 1000)); // 10s max
+
+                return anythingEndpoint(req, res, {
+                    fieldFilter: ["url", "args", "form", "data", "origin", "headers", "files"]
+                });
+
+            }
+            // --- Last httpbin org endpoint ---
+
+            else {
                 res.writeHead(404);
                 res.end(`No handler for ${req.url}`);
             }
