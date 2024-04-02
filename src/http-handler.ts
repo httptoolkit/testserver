@@ -34,6 +34,15 @@ export function createHttpHandler(options: {
                 res.end(input);
             } else if (path === '/anything') {
                 await anythingEndpoint(req, res);
+            } else if (path.startsWith('/status/')) {
+                const statusCode = parseInt(path.slice('/status/'.length), 10);
+                if (isNaN(statusCode)) {
+                    res.writeHead(400);
+                    res.end('Invalid status code');
+                } else {
+                    res.writeHead(statusCode);
+                    res.end();
+                }
             } else {
                 res.writeHead(404);
                 res.end(`No handler for ${req.url}`);
