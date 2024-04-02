@@ -79,6 +79,8 @@ export async function anythingEndpoint(req: http.IncomingMessage, res: http.Serv
 
     const contentType = req.headers['content-type'];
 
+    const origin = req.socket.remoteAddress?.replace(/^::ffff:/, '') // Drop IPv6 wrapper of IPv4 addresses
+
     let result: {} = {
         args: getUrlArgs(url),
         data: asJsonSafeString(input, contentType),
@@ -93,7 +95,7 @@ export async function anythingEndpoint(req: http.IncomingMessage, res: http.Serv
         ).sort((a, b) => a < b ? -1 : a > b ? 1 : 0)),
         json: jsonValue,
         method: req.method,
-        origin: req.socket.remoteAddress,
+        origin: origin,
         url: url.toString()
     };
 
