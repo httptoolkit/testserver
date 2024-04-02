@@ -34,6 +34,14 @@ export function createHttpHandler(options: {
                 res.end(input);
             } else if (path === '/anything') {
                 await anythingEndpoint(req, res);
+            } else if (http.METHODS.includes(path.slice(1))) {
+                const method = path.slice(1);
+                await anythingEndpoint(req, res, {
+                    requiredMethod: method,
+                    fieldFilter: method === 'GET'
+                        ? ["url", "args", "headers", "origin"]
+                        : ["url", "args", "form", "data", "origin", "headers", "files", "json"]
+                });
             } else if (path.startsWith('/status/')) {
                 const statusCode = parseInt(path.slice('/status/'.length), 10);
                 if (isNaN(statusCode)) {

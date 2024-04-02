@@ -58,7 +58,15 @@ const getFiles = (body: Buffer, req: http.IncomingMessage) => {
 // This endpoint returns the request details in a convenient JSON format for analysis. The format
 // aims to exactly match the output of httpbin.org (https://github.com/postmanlabs/httpbin/) for
 // interoperability since this is widely used (and it's generally a reasonable format for this).
-export async function anythingEndpoint(req: http.IncomingMessage, res: http.ServerResponse) {
+export async function anythingEndpoint(req: http.IncomingMessage, res: http.ServerResponse, options: {
+    requiredMethod?: string,
+    fieldFilter?: string[]
+} = {}) {
+    if (options.requiredMethod && options.requiredMethod !== req.method) {
+        res.writeHead(405);
+        res.end('Method Not Allowed');
+    }
+
     const input = await streamConsumers.buffer(req); // Wait for all request data
 
     const isHTTPS = req.socket instanceof TLSSocket;
@@ -71,7 +79,7 @@ export async function anythingEndpoint(req: http.IncomingMessage, res: http.Serv
 
     const contentType = req.headers['content-type'];
 
-    const result = {
+    let result: {} = {
         args: getUrlArgs(url),
         data: asJsonSafeString(input, contentType),
         files: getFiles(input, req),
@@ -87,6 +95,10 @@ export async function anythingEndpoint(req: http.IncomingMessage, res: http.Serv
         method: req.method,
         origin: req.socket.remoteAddress,
         url: url.toString()
+    };
+
+    if (options.fieldFilter) {
+        result = _.pick(result, options.fieldFilter)
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
