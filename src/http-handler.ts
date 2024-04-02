@@ -5,6 +5,26 @@ import { clearArray } from './util.js';
 
 import { anythingEndpoint } from './endpoints/anything.js';
 
+const allowCORS = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const origin = req.headers['origin'];
+    if (!origin) return;
+
+    res.setHeader('access-control-allow-origin', origin);
+    res.setHeader('access-control-allow-credentials', 'true');
+
+    if (req.headers['access-control-request-method']) {
+        res.setHeader('access-control-allow-method', req.headers['access-control-request-method']);
+    }
+
+    if (req.headers['access-control-request-headers']) {
+        res.setHeader('access-control-allow-headers', req.headers['access-control-request-headers']);
+    }
+
+    if (req.headers['access-control-request-private-network']) {
+        res.setHeader('access-control-allow-private-network', 'true');
+    }
+}
+
 export function createHttpHandler(options: {
     acmeChallengeCallback: (token: string) => string | undefined
 }) {
@@ -25,7 +45,17 @@ export function createHttpHandler(options: {
                     res.writeHead(404);
                     res.end('Unrecognized ACME challenge request');
                 }
-            } else if (path === '/echo') {
+
+                // We have to clear this, as we might get multiple requests on the same
+                // socket with keep-alive etc.
+                clearArray(req.socket.receivedData);
+                return;
+            }
+
+            // Now we begin the various test endpoints themselves:
+            allowCORS(req, res);
+
+            if (path === '/echo') {
                 await streamConsumers.buffer(req); // Wait for all request data
                 const input = Buffer.concat(req.socket.receivedData ?? []);
                 res.writeHead(200, {
