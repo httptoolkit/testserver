@@ -32,7 +32,7 @@ export function createHttpHandler(options: {
                     'Content-Length': Buffer.byteLength(input)
                 });
                 res.end(input);
-            } else if (path === '/anything') {
+            } else if (path.match(/^\/anything(\/|$)/)) {
                 await anythingEndpoint(req, res);
             } else if (http.METHODS.includes(path.slice(1))) {
                 const method = path.slice(1);
