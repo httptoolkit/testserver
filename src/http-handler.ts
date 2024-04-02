@@ -3,6 +3,8 @@ import * as streamConsumers from 'stream/consumers';
 
 import { clearArray } from './util.js';
 
+import { anythingEndpoint } from './endpoints/anything.js';
+
 export function createHttpHandler(options: {
     acmeChallengeCallback: (token: string) => string | undefined
 }) {
@@ -30,6 +32,8 @@ export function createHttpHandler(options: {
                     'Content-Length': Buffer.byteLength(input)
                 });
                 res.end(input);
+            } else if (path === '/anything') {
+                await anythingEndpoint(req, res);
             } else {
                 res.writeHead(404);
                 res.end(`No handler for ${req.url}`);
