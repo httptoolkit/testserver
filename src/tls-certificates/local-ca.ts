@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import forge from 'node-forge';
+import { PersistentCertCache } from './cert-cache.js';
 
 const { pki, md } = forge;
 
@@ -36,7 +37,7 @@ export interface CAOptions {
 
 export type PEM = string | string[] | Buffer | Buffer[];
 
-type GeneratedCertificate = {
+type LocallyGeneratedCertificate = {
     key: string,
     cert: string,
     ca: string
@@ -132,14 +133,17 @@ export class LocalCA {
     private caKey: forge.pki.PrivateKey;
     private options: CAOptions;
 
-    private certCache: { [domain: string]: GeneratedCertificate } = {};
+    private certInMemoryCache: { [domain: string]: LocallyGeneratedCertificate | undefined } = {};
 
-    constructor(options: CAOptions) {
-        this.caKey = pki.privateKeyFromPem(options.key.toString());
-        this.caCert = pki.certificateFromPem(options.cert.toString());
-        this.options = options ?? {};
+    constructor(
+        caOptions: CAOptions,
+        private certDiskCache?: PersistentCertCache
+    ) {
+        this.caKey = pki.privateKeyFromPem(caOptions.key.toString());
+        this.caCert = pki.certificateFromPem(caOptions.cert.toString());
+        this.options = caOptions ?? {};
 
-        const keyLength = options.keyLength || 2048;
+        const keyLength = caOptions.keyLength || 2048;
 
         if (!KEY_PAIR || KEY_PAIR.length < keyLength) {
             // If we have no key, or not a long enough one, generate one.
@@ -150,8 +154,9 @@ export class LocalCA {
         }
     }
 
-    generateCertificate(domain: string): GeneratedCertificate {
-        if (this.certCache[domain]) return this.certCache[domain];
+    generateCertificate(domain: string) {
+        const cachedCert = this.certDiskCache?.getCert(domain);
+        if (cachedCert) return cachedCert;
 
         if (domain.includes('_')) {
             // TLS certificates cannot cover domains with underscores, bizarrely. More info:
@@ -237,12 +242,13 @@ export class LocalCA {
             ca: pki.certificateToPem(this.caCert)
         };
 
-        this.certCache[domain] = generatedCertificate;
+        // We cache in memory only - no need to persist these (unlike ACME etc)
+        this.certInMemoryCache[domain] = generatedCertificate;
 
         // Make sure this gets regenerated in 24 hours, in case this
         // server is running persistently:
         setTimeout(() => {
-            delete this.certCache[domain];
+            delete this.certInMemoryCache[domain];
         }, 1000 * 60 * 60 * 24).unref();
 
         return generatedCertificate;

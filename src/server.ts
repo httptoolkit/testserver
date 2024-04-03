@@ -2,9 +2,11 @@ import * as net from 'net';
 
 import { createHttpHandler } from './http-handler.js';
 import { createTlsHandler } from './tls-handler.js';
-import { LocalCA, generateCACertificate } from './local-ca.js';
 import { ConnectionProcessor } from './process-connection.js';
-import { buildAcmeCA } from './acme.js';
+
+import { AcmeCA } from './tls-certificates/acme.js';
+import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
+import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 
 declare module 'stream' {
     interface Duplex {
@@ -21,9 +23,18 @@ interface ServerOptions {
 
 async function generateTlsConfig(options: ServerOptions) {
     const rootDomain = options.domain ?? 'localhost';
-    const caCert = await generateCACertificate();
 
-    const ca = new LocalCA(caCert);
+    const certCache = options.certCacheDir
+        ? new PersistentCertCache(options.certCacheDir)
+        : undefined;
+    const [
+        caCert
+    ] = await Promise.all([
+        generateCACertificate(),
+        certCache ? certCache.loadCache() : null
+    ]);
+
+    const ca = new LocalCA(caCert, certCache);
     const defaultCert = ca.generateCertificate(rootDomain);
 
     if (!options.enableACME) {
@@ -39,11 +50,11 @@ async function generateTlsConfig(options: ServerOptions) {
     if (!options.domain) {
         throw new Error(`Can't enable ACME without configuring a domain (via $ROOT_DOMAIN)`);
     }
-    if (!options.certCacheDir) {
+    if (!options.certCacheDir || !AcmeCA) {
         throw new Error(`Can't enable ACME without configuring a cert cache directory (via $CERT_CACHE_DIR)`);
     }
 
-    const acmeCA = await buildAcmeCA(options.certCacheDir);
+    const acmeCA = new AcmeCA(certCache!);
     acmeCA.tryGetCertificateSync(rootDomain); // Preload the root domain every time
 
     return {
