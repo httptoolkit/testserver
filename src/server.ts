@@ -88,7 +88,14 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
         acmeChallengeCallback: tlsConfig.acmeChallenge
     });
 
-    return (conn: net.Socket) => connProcessor.processConnection(conn);
+    return (conn: net.Socket) => {
+        try {
+            connProcessor.processConnection(conn);
+        } catch (e: any) {
+            console.error(e);
+            conn.destroy();
+        }
+    };
 };
 
 function createTcpServer(handler: (conn: net.Socket) => void) {
