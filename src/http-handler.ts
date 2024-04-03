@@ -33,6 +33,7 @@ export function createHttpHandler(options: {
         const url = new URL(req.url!, `http://${req.headers.host}`);
         const path = url.pathname;
 
+        // --- A few initial administrative endpoints, that don't support CORS etc etc ---
         if (path.startsWith('/.well-known/acme-challenge/')) {
             const token = path.split('/')[3];
             const response = options.acmeChallengeCallback(token);
@@ -50,8 +51,18 @@ export function createHttpHandler(options: {
             return;
         }
 
+        if (path === '/') {
+            res.writeHead(307, {
+                location: 'https://github.com/httptoolkit/testserver/'
+            });
+            res.end();
+            return;
+        }
+
+
         // Now we begin the various test endpoints themselves:
         allowCORS(req, res);
+
         if (req.method === 'OPTIONS') {
             // Handle preflight CORS requests for everything
             res.writeHead(200);
@@ -105,6 +116,10 @@ export function createHttpHandler(options: {
             return anythingEndpoint(req, res, {
                 fieldFilter: ["url", "args", "form", "data", "origin", "headers", "files"]
             });
+        } else if (path === '/robots.txt') {
+            res.writeHead(200, { 'content-type': 'text/plain' });
+            // Only allow access to the root page:
+            res.end('User-agent: *\nAllow: /$\nDisallow: /\n')
         }
         // --- Last httpbin org endpoint ---
 
