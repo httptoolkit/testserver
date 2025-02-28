@@ -4,7 +4,7 @@ import { createHttpHandler } from './http-handler.js';
 import { createTlsHandler } from './tls-handler.js';
 import { ConnectionProcessor } from './process-connection.js';
 
-import { AcmeCA } from './tls-certificates/acme.js';
+import { AcmeCA, AcmeProvider, ExternalAccessBindingConfig } from './tls-certificates/acme.js';
 import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 
@@ -17,8 +17,9 @@ declare module 'stream' {
 
 interface ServerOptions {
     domain?: string;
-    enableACME?: boolean;
+    acmeProvider?: AcmeProvider;
     certCacheDir?: string;
+    eabConfig?: ExternalAccessBindingConfig;
 }
 
 async function generateTlsConfig(options: ServerOptions) {
@@ -37,7 +38,8 @@ async function generateTlsConfig(options: ServerOptions) {
     const ca = new LocalCA(caCert, certCache);
     const defaultCert = ca.generateCertificate(rootDomain);
 
-    if (!options.enableACME) {
+    if (!options.acmeProvider) {
+        console.log('Using self signed certificates');
         return {
             key: defaultCert.key,
             cert: defaultCert.cert,
@@ -47,6 +49,8 @@ async function generateTlsConfig(options: ServerOptions) {
         };
     }
 
+    console.log(`Using ACME with ${options.acmeProvider} for certificates`);
+
     if (!options.domain) {
         throw new Error(`Can't enable ACME without configuring a domain (via $ROOT_DOMAIN)`);
     }
@@ -54,7 +58,7 @@ async function generateTlsConfig(options: ServerOptions) {
         throw new Error(`Can't enable ACME without configuring a cert cache directory (via $CERT_CACHE_DIR)`);
     }
 
-    const acmeCA = new AcmeCA(certCache!);
+    const acmeCA = new AcmeCA(certCache!, options.acmeProvider, options.eabConfig);
     acmeCA.tryGetCertificateSync(rootDomain); // Preload the root domain every time
 
     return {
@@ -116,7 +120,10 @@ if (wasRunDirectly) {
 
     createTcpHandler({
         domain: process.env.ROOT_DOMAIN,
-        enableACME: process.env.ENABLE_ACME === 'true',
+        acmeProvider: process.env.ACME_PROVIDER as AcmeProvider | undefined,
+        eabConfig: process.env.ACME_EAB_KID && process.env.ACME_EAB_HMAC
+            ? { kid: process.env.ACME_EAB_KID, hmacKey: process.env.ACME_EAB_HMAC }
+            : undefined,
         certCacheDir: process.env.CERT_CACHE_DIR
     }).then((tcpHandler) => {
         ports.forEach((port) => {
