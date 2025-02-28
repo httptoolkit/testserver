@@ -88,6 +88,9 @@ export class AcmeCA {
             return cachedCert;
         }
 
+        if (!cachedCert) console.log(`No cached cert for ${domain}`);
+        else if (options.forceRegenerate) console.log(`Force regenerating cert for ${domain}`);
+
         if (this.pendingCertRenewals[domain] && !options.forceRegenerate) {
             // Coalesce updates for pending certs into one
             return this.pendingCertRenewals[domain]!;
@@ -145,6 +148,8 @@ export class AcmeCA {
                 this.pendingAcmeChallenges[challenge.token];
             }
         });
+
+        console.log(`Successfully ACMEd new certificate for ${domain}`);
 
         return {
             key: key.toString(),
