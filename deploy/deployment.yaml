@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: testserver
+  template:
+    metadata:
+      labels:
+        app: testserver
+    spec:
+      containers:
+      - name: testserver
+        image: ghcr.io/httptoolkit/testserver:latest
+        imagePullPolicy: Always
+        env:
+        - name: PORTS
+          value: "80,443,8000,8080,8443"
+        - name: CERT_CACHE_DIR
+          value: /usr/src/app/cert_dir
+        - name: ACME_PROVIDER
+          value: zerossl
+        - name: ROOT_DOMAIN
+          value: testserver.host
+        - name: ACME_EAB_KID
+          valueFrom:
+            secretKeyRef:
+              name: zerossl
+              key: eab-kid
+        - name: ACME_EAB_HMAC
+          valueFrom:
+            secretKeyRef:
+              name: zerossl
+              key: eab-hmac
+        volumeMounts:
+        - mountPath: /usr/src/app/cert_dir
+          name: testserver-certs
+      volumes:
+      - name: testserver-certs
+        hostPath:
+          path: /mnt/kube-data/testserver-certs
+          type: DirectoryOrCreate
