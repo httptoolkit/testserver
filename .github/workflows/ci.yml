@@ -67,16 +67,3 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.sha }}
-
-      - name: Redeploy site
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          sleep 10 # Wait for Docker Hub to fully publish
-
-          # Trigger a container redeploy:
-          curl "https://app.hidora.com/1.0/environment/control/rest/redeploycontainersbygroup?session=$HIDORA_API_TOKEN&envName=$ENV_NAME&nodeGroup=cp&tag=prod&useExistingVolumes=true" | \
-              tee /dev/stderr | \
-              grep -q 'Node has been successfully updated'
-        env:
-          HIDORA_API_TOKEN: ${{ secrets.HIDORA_API_TOKEN }}
-          ENV_NAME: ${{ vars.HIDORA_ENV_NAME }}
