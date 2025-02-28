@@ -17,7 +17,15 @@ export class PersistentCertCache {
     cache: { [domain: string]: CachedCertificate | undefined } = {};
 
     async loadCache() {
-        const certFiles = await fs.readdir(this.certCacheDir);
+        const certFiles = await fs.readdir(this.certCacheDir)
+            .catch(async (err): Promise<string[]> => {
+                if (err.code === 'ENOENT') {
+                    await fs.mkdir(this.certCacheDir);
+                    return [];
+                } else {
+                    throw err;
+                }
+            });
 
         await Promise.all(certFiles.map(async (certPath) => {
             if (!certPath.endsWith('.cert.json')) {
