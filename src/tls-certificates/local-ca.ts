@@ -155,7 +155,8 @@ export class LocalCA {
     }
 
     generateCertificate(domain: string) {
-        const cachedCert = this.certDiskCache?.getCert(domain);
+        const cachedCert = this.certDiskCache?.getCert(domain)
+            ?? this.certInMemoryCache[domain];
         if (cachedCert) return cachedCert;
 
         if (domain.includes('_')) {
