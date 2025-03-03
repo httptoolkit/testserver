@@ -31,11 +31,13 @@ export class PersistentCertCache {
             certFiles.map(f => `'${f}'`).join(', ')
         }`);
 
-        await Promise.all(certFiles.map(async (certPath) => {
-            if (!certPath.endsWith('.cert.json')) {
-                console.log(`Unexpected file in cert dir: ${certPath}`);
+        await Promise.all(certFiles.map(async (certName) => {
+            if (!certName.endsWith('.cert.json')) {
+                console.log(`Unexpected file in cert dir: ${certName}`);
                 return;
             }
+
+            const certPath = path.join(this.certCacheDir, certName);
 
             try {
                 const data = JSON.parse(
@@ -51,13 +53,16 @@ export class PersistentCertCache {
 
                 this.cache[data.domain] = data;
             } catch (e) {
-                console.log(`Could not load cert from ${certPath}:`, e);
+                console.log(`Could not load cert from ${certName}:`, e);
             }
         }));
     }
 
     cacheCert(cert: CachedCertificate): CachedCertificate | undefined {
         const { domain } = cert;
+
+        this.cache[domain] = cert;
+
         fs.writeFile(
             path.join(this.certCacheDir, `${domain}.cert.json`),
             JSON.stringify(cert)
