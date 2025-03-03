@@ -145,6 +145,16 @@ export class AcmeCA {
                     throw new Error(`Unexpected ${challenge.type} challenge`);
                 }
 
+                console.log(`Removing ACME ${
+                    challenge.status
+                } ${
+                    challenge.type
+                } challenge (validated: ${
+                    challenge.validated
+                }, error: ${
+                    JSON.stringify(challenge.error)
+                })`)
+
                 this.pendingAcmeChallenges[challenge.token];
             }
         });

@@ -27,6 +27,10 @@ export class PersistentCertCache {
                 }
             });
 
+        console.log(`Starting up with ${certFiles.length} certificates cached: ${
+            certFiles.map(f => `'${f}'`).join(', ')
+        }`);
+
         await Promise.all(certFiles.map(async (certPath) => {
             if (!certPath.endsWith('.cert.json')) {
                 console.log(`Unexpected file in cert dir: ${certPath}`);
@@ -59,8 +63,9 @@ export class PersistentCertCache {
             JSON.stringify(cert)
         ).catch((e) => {
             console.warn(`Failed to cache to disk certificate data for ${domain}`);
-        })
+        });
 
+        console.log(`Cached cert for ${domain}`);
         return this.cache[domain];
     }
 
@@ -69,7 +74,14 @@ export class PersistentCertCache {
     }
 
     getCert(domain: string): CachedCertificate | undefined {
-        return this.cache[domain];
+        const cert = this.cache[domain];
+
+        console.log(cert
+            ? `Found cached cert for ${domain}`
+            : `No cert available for ${domain}`
+        );
+
+        return cert;
     }
 
 }
