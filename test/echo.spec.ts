@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as tls from 'tls';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
@@ -10,16 +11,18 @@ describe("Echo endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer());
+        server = makeDestroyable(await createServer({
+            domain: 'localhost'
+        }));
         await new Promise<void>((resolve) => server.listen(resolve));
         serverPort = (server.address() as net.AddressInfo).port;
     });
 
     afterEach(async () => {
         await server.destroy();
-    })
+    });
 
-    it("echoes a response", async () => {
+    it("echoes an HTTP request", async () => {
         const address = `http://localhost:${serverPort}/echo`;
         const response = await fetch(address, {
             headers: {

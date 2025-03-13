@@ -4,6 +4,7 @@ import * as streamConsumers from 'stream/consumers';
 
 import * as querystring from 'querystring';
 import * as multipart from 'parse-multipart-data';
+
 import { TLSSocket } from 'tls';
 
 const utf8Decoder = new TextDecoder('utf8', { fatal: true });
@@ -58,15 +59,9 @@ const getFiles = (body: Buffer, req: http.IncomingMessage) => {
 // This endpoint returns the request details in a convenient JSON format for analysis. The format
 // aims to exactly match the output of httpbin.org (https://github.com/postmanlabs/httpbin/) for
 // interoperability since this is widely used (and it's generally a reasonable format for this).
-export async function anythingEndpoint(req: http.IncomingMessage, res: http.ServerResponse, options: {
-    requiredMethod?: string,
+export const buildHttpBinAnythingEndpoint = (options: {
     fieldFilter?: string[]
-} = {}) {
-    if (options.requiredMethod && options.requiredMethod !== req.method) {
-        res.writeHead(405);
-        res.end('Method Not Allowed');
-    }
-
+}) => async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const input = await streamConsumers.buffer(req); // Wait for all request data
 
     const isHTTPS = req.socket instanceof TLSSocket;

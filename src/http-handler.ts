@@ -1,10 +1,8 @@
 import * as http from 'http';
-import * as streamConsumers from 'stream/consumers';
-import { delay } from '@httptoolkit/util';
 
 import { clearArray } from './util.js';
 
-import { anythingEndpoint } from './endpoints/anything.js';
+import { httpEndpoints } from './endpoints/endpoint-index.js';
 
 const allowCORS = (req: http.IncomingMessage, res: http.ServerResponse) => {
     const origin = req.headers['origin'];
@@ -59,7 +57,6 @@ export function createHttpHandler(options: {
             return;
         }
 
-
         // Now we begin the various test endpoints themselves:
         allowCORS(req, res);
 
@@ -67,63 +64,17 @@ export function createHttpHandler(options: {
             // Handle preflight CORS requests for everything
             res.writeHead(200);
             res.end();
-        } else if (path === '/echo') {
-            await streamConsumers.buffer(req); // Wait for all request data
-            const input = Buffer.concat(req.socket.receivedData ?? []);
-            res.writeHead(200, {
-                'Content-Length': Buffer.byteLength(input)
-            });
-            res.end(input);
         }
 
-        // --- Now we start on the httpbin.org endpoints ---
-        else if (path.match(/^\/anything(\/|$)/)) {
-            await anythingEndpoint(req, res);
-        } else if (http.METHODS.includes(path.slice(1))) {
-            const method = path.slice(1);
-            await anythingEndpoint(req, res, {
-                requiredMethod: method,
-                fieldFilter: method === 'GET'
-                    ? ["url", "args", "headers", "origin"]
-                    : ["url", "args", "form", "data", "origin", "headers", "files", "json"]
-            });
-        } else if (path.startsWith('/status/')) {
-            const statusCode = parseInt(path.slice('/status/'.length), 10);
-            if (isNaN(statusCode)) {
-                res.writeHead(400);
-                res.end('Invalid status code');
-            } else {
-                res.writeHead(statusCode);
-                res.end();
-            }
-        } else if (path === '/headers') {
-            return anythingEndpoint(req, res, { fieldFilter: ["headers"] });
-        } else if (path === '/ip') {
-            return anythingEndpoint(req, res, { fieldFilter: ["origin"] });
-        } else if (path === '/user-agent') {
-            res.writeHead(200);
-            res.end('');
-        } else if (path.startsWith('/delay/')) {
-            const delayMs = parseFloat(path.slice('/delay/'.length));
+        const matchingEndpoint = httpEndpoints.find((endpoint) =>
+            endpoint.matchPath(path)
+        );
 
-            if (isNaN(delayMs)) {
-                res.writeHead(400);
-                res.end('Invalid delay duration');
-            }
-
-            await delay(Math.min(delayMs, 10 * 1000)); // 10s max
-
-            return anythingEndpoint(req, res, {
-                fieldFilter: ["url", "args", "form", "data", "origin", "headers", "files"]
-            });
-        } else if (path === '/robots.txt') {
-            res.writeHead(200, { 'content-type': 'text/plain' });
-            // Only allow access to the root page:
-            res.end('User-agent: *\nAllow: /$\nDisallow: /\n')
-        }
-        // --- Last httpbin org endpoint ---
-
-        else {
+        if (matchingEndpoint) {
+            console.log(`Request to ${path} matched endpoint ${matchingEndpoint.name}`);
+            await matchingEndpoint.handle(req, res, { path });
+        } else {
+            console.log(`Request to ${path} matched no endpoints`);
             res.writeHead(404);
             res.end(`No handler for ${req.url}`);
         }
