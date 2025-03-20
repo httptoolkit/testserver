@@ -55,7 +55,6 @@ jobs:
             ghcr.io/httptoolkit/testserver
             rg.nl-ams.scw.cloud/httptoolkit/testserver
           tags: |
-              type=raw,value=prod,enable={{is_default_branch}}
               type=raw,value=latest,enable={{is_default_branch}}
               type=sha
 
@@ -67,3 +66,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.sha }}
+
+      - name: Deploy to Bunny
+        uses: BunnyWay/actions/container-update-image@container-update-image_0.1.1
+        with:
+          app_id: ${{ vars.BUNNY_APP_ID }}
+          api_key: ${{ secrets.BUNNY_API_KEY }}
+          container: TestServer
+          image_tag: "${{ github.sha }}"
