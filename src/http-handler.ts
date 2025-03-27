@@ -33,6 +33,7 @@ export function createHttpHandler(options: {
 
         // --- A few initial administrative endpoints, that don't support CORS etc etc ---
         if (path.startsWith('/.well-known/acme-challenge/')) {
+            console.log("Got ACME challenge request", path);
             const token = path.split('/')[3];
             const response = options.acmeChallengeCallback(token);
             if (response) {
