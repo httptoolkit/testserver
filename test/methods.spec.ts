@@ -2,7 +2,7 @@ import * as net from 'net';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server';
+import { createServer } from '../src/server.js';
 
 describe("Method endpoints", () => {
 

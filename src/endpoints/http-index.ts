@@ -5,7 +5,8 @@ export type HttpHandler = (
     req: http.IncomingMessage,
     res: http.ServerResponse,
     options: {
-        path: string
+        path: string;
+        query: URLSearchParams;
     }
 ) => MaybePromise<void>;
 
@@ -23,3 +24,4 @@ export * from './http/headers.js';
 export * from './http/user-agent.js';
 export * from './http/robots.txt.js';
 export * from './http/delay.js';
+export * from './http/cookies.js'

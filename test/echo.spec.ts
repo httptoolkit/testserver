@@ -1,9 +1,8 @@
 import * as net from 'net';
-import * as tls from 'tls';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server';
+import { createServer } from '../src/server.js';
 
 describe("Echo endpoint", () => {
 

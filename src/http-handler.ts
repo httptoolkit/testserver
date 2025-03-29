@@ -73,7 +73,10 @@ export function createHttpHandler(options: {
 
         if (matchingEndpoint) {
             console.log(`Request to ${path} matched endpoint ${matchingEndpoint.name}`);
-            await matchingEndpoint.handle(req, res, { path });
+            await matchingEndpoint.handle(req, res, {
+                path,
+                query: url.searchParams
+            });
         } else {
             console.log(`Request to ${path} matched no endpoints`);
             res.writeHead(404);

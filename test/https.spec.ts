@@ -6,7 +6,7 @@ import * as streamConsumers from 'stream/consumers';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server';
+import { createServer } from '../src/server.js';
 
 describe("HTTPS requests", () => {
 
