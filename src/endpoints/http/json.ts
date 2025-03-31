@@ -1,3 +1,4 @@
+import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) => path === '/json';
@@ -8,7 +9,7 @@ const handle: HttpHandler = (req, res) => {
     });
 
     // HTTPBin seems to just return this fixed example document:
-    res.end(JSON.stringify({
+    res.end(serializeJson({
         "slideshow": {
             "author": "Yours Truly",
             "date": "date of publication",
@@ -28,7 +29,7 @@ const handle: HttpHandler = (req, res) => {
             ],
             "title": "Sample Slide Show"
         }
-    }, null, 2));
+    }));
 }
 
 export const json: HttpEndpoint = {

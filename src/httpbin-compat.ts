@@ -6,6 +6,7 @@ import * as querystring from 'querystring';
 import * as multipart from 'parse-multipart-data';
 
 import { TLSSocket } from 'tls';
+import { serializeJson } from './util.js';
 
 const utf8Decoder = new TextDecoder('utf8', { fatal: true });
 
@@ -99,5 +100,5 @@ export const buildHttpBinAnythingEndpoint = (options: {
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
+    res.end(serializeJson(result));
 }

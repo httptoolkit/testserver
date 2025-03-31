@@ -1,3 +1,4 @@
+import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) => path === '/user-agent';
@@ -7,7 +8,9 @@ const handle: HttpHandler = (req, res) => {
     res.writeHead(200, {
         'content-type': 'application/json'
     });
-    res.end(JSON.stringify({ 'user-agent': userAgent }));
+    res.end(serializeJson({
+        'user-agent': userAgent
+    }));
 }
 
 export const userAgent: HttpEndpoint = {

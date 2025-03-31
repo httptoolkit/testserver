@@ -1,3 +1,4 @@
+import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) =>
@@ -20,7 +21,7 @@ const handle: HttpHandler = (req, res, { path }) => {
         res.writeHead(200, {
             'content-type': 'application/json'
         });
-        res.end(JSON.stringify({
+        res.end(serializeJson({
             "authenticated": true,
             "user": username
         }));

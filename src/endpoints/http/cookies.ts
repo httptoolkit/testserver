@@ -1,13 +1,14 @@
 import * as Cookie from 'cookie';
 
 import { HttpEndpoint } from '../http-index.js';
+import { serializeJson } from '../../util.js';
 
 export const getCookies: HttpEndpoint = {
     matchPath: (path) => path === '/cookies',
     handle: (req, res) => {
         const cookies = Cookie.parse(req.headers.cookie || '');
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ cookies }, null, 2));
+        res.end(serializeJson({ cookies }));
     }
 }
 
