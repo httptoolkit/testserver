@@ -7,6 +7,7 @@ export type HttpHandler = (
     options: {
         path: string;
         query: URLSearchParams;
+        handleRequest: (req: http.IncomingMessage, res: http.ServerResponse) => void;
     }
 ) => MaybePromise<void>;
 
