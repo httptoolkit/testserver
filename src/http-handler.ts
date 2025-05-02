@@ -1,10 +1,12 @@
 import * as http from 'http';
+import * as http2 from 'http2';
 
 import { clearArray } from './util.js';
 
 import { httpEndpoints } from './endpoints/endpoint-index.js';
+import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 
-const allowCORS = (req: http.IncomingMessage, res: http.ServerResponse) => {
+const allowCORS = (req: HttpRequest, res: HttpResponse) => {
     const origin = req.headers['origin'];
     if (!origin) return;
 
@@ -24,10 +26,15 @@ const allowCORS = (req: http.IncomingMessage, res: http.ServerResponse) => {
     }
 }
 
-export function createHttpHandler(options: {
+type RequestHandler = (
+    req: HttpRequest,
+    res: HttpResponse
+) => Promise<void>;
+
+function createHttpRequestHandler(options: {
     acmeChallengeCallback: (token: string) => string | undefined
-}) {
-    async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+}): RequestHandler {
+    return async function handleRequest(req, res) {
         const url = new URL(req.url!, `http://${req.headers.host}`);
         const path = url.pathname;
 
@@ -84,10 +91,44 @@ export function createHttpHandler(options: {
             res.end(`No handler for ${req.url}`);
         }
     }
+}
 
+export function createHttp1Handler(options: {
+    acmeChallengeCallback: (token: string) => string | undefined
+}) {
+    const handleRequest = createHttpRequestHandler(options);
     const handler = new http.Server(async (req, res) => {
         try {
-            console.log(`Handling request to ${req.url}`);
+            console.log(`Handling H1 request to ${req.url}`);
+            await handleRequest(req, res);
+        } catch (e) {
+            console.error(e);
+
+            if (res.closed) return;
+            else if (res.headersSent) {
+                res.destroy();
+            } else {
+                res.writeHead(500);
+                res.end('HTTP handler failed');
+            }
+        } finally {
+            // We have to clear this, as we might get multiple requests on the same
+            // socket with keep-alive etc.
+            clearArray(req.socket.receivedData);
+        }
+    });
+
+    handler.on('error', (err) => console.error('HTTP handler error', err));
+
+    return handler;
+}
+
+export function createHttp2Handler(options: {
+    acmeChallengeCallback: (token: string) => string | undefined
+}) {
+    const handleRequest = createHttpRequestHandler(options);
+    const handler = http2.createServer(async (req, res) => {
+        try {
             await handleRequest(req, res);
         } catch (e) {
             console.error(e);

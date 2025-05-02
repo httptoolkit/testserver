@@ -42,7 +42,7 @@ export const setCookies: HttpEndpoint = {
                     })
                 ];
             })).flat()
-        ]).end();
+        ] as any).end(); // Any because H2 types don't include string array
     }
 }
 
@@ -57,6 +57,6 @@ export const deleteCookies: HttpEndpoint = {
                 'set-cookie',
                 `${key}=; Expires=Thu, 01-Jan-1970 00:00:00 GMT; Max-Age=0; Path=/`
             ]).flat()
-        ]).end();
+        ] as any).end(); // Any because H2 types don't include string array
     }
 }

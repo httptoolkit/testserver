@@ -21,6 +21,7 @@ export async function createTlsHandler(
         key: tlsConfig.key,
         cert: tlsConfig.cert,
         ca: [tlsConfig.ca],
+        ALPNProtocols: ['h2', 'http/1.1'],
         SNICallback: (domain: string, cb: Function) => {
             try {
                 const generatedCert = tlsConfig.generateCertificate(domain);

@@ -1,4 +1,6 @@
 import * as net from 'net';
+import * as http2 from 'http2';
+
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 

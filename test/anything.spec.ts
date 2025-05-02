@@ -1,4 +1,6 @@
 import * as net from 'net';
+import * as http2 from 'http2';
+import * as streamConsumers from 'stream/consumers';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
@@ -91,6 +93,44 @@ describe("Anything endpoint", () => {
             origin: body.origin ?? 'fail', // Skip testing the exact value since it varies a lot
             url: `http://localhost:${serverPort}/anything?&&&&`
         });
+    });
+
+    it("returns request details for HTTP/2", async () => {
+            const client = http2.connect(`http://localhost:${serverPort}`);
+            const request = client.request({
+                ':path': '/anything?&&&&',
+                ':method': 'PUT',
+                'test-HEADER': 'abc',
+                'content-type': 'application/json'
+            });
+            request.end(JSON.stringify({ "hello": "world" }));
+            const response = await new Promise<
+                http2.IncomingHttpHeaders & http2.IncomingHttpStatusHeader
+            >((resolve) =>
+                request.on('response', resolve)
+            );
+
+            expect(response[':status']).to.equal(200);
+
+            const body: any = await streamConsumers.json(request);
+            expect(body).to.deep.equal({
+                args: {},
+                data: '{"hello":"world"}',
+                files: {},
+                form: {},
+                headers: {
+                    ":authority": `localhost:${serverPort}`,
+                    ":method": "PUT",
+                    ":path": "/anything?&&&&",
+                    ":scheme": "http",
+                    "Content-Type": "application/json",
+                    "Test-Header": "abc",
+                },
+                json: { "hello": "world" },
+                method: "PUT",
+                origin: body.origin ?? 'fail', // Skip testing the exact value since it varies a lot
+                url: `http://localhost:${serverPort}/anything?&&&&`
+            });
     });
 
 });

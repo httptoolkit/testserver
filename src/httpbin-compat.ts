@@ -1,5 +1,4 @@
 import _ from 'lodash';
-import * as http from 'http';
 import * as streamConsumers from 'stream/consumers';
 
 import * as querystring from 'querystring';
@@ -7,6 +6,7 @@ import * as multipart from 'parse-multipart-data';
 
 import { TLSSocket } from 'tls';
 import { serializeJson } from './util.js';
+import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 
 const utf8Decoder = new TextDecoder('utf8', { fatal: true });
 
@@ -40,7 +40,7 @@ const entriesToMultidict = (entries: Array<[string, string]>) =>
 // Matches Flask's req.args multi-dict values
 const getUrlArgs = (url: URL) => entriesToMultidict([...url.searchParams.entries()]);
 
-const getFiles = (body: Buffer, req: http.IncomingMessage) => {
+const getFiles = (body: Buffer, req: HttpRequest) => {
     const contentType = req.headers["content-type"];
     if (!contentType?.includes("multipart/form-data")) return {};
 
@@ -62,11 +62,13 @@ const getFiles = (body: Buffer, req: http.IncomingMessage) => {
 // interoperability since this is widely used (and it's generally a reasonable format for this).
 export const buildHttpBinAnythingEndpoint = (options: {
     fieldFilter?: string[]
-}) => async (req: http.IncomingMessage, res: http.ServerResponse) => {
+}) => async (req: HttpRequest, res: HttpResponse) => {
     const input = await streamConsumers.buffer(req); // Wait for all request data
 
     const isHTTPS = req.socket instanceof TLSSocket;
-    const url = new URL(req.url as string, `${isHTTPS ? 'https' : 'http'}://${req.headers.host}`);
+    const url = new URL(req.url as string, `${isHTTPS ? 'https' : 'http'}://${
+        req.headers[':authority'] || req.headers.host
+    }`);
 
     let jsonValue: any = null;
     try {

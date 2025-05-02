@@ -5,6 +5,15 @@ import * as http from 'http';
 const TLS_HANDSHAKE_BYTE = 0x16; // SSLv3+ or TLS handshake
 const isTLS = (initialData: Uint8Array) => initialData[0] === TLS_HANDSHAKE_BYTE;
 
+const HTTP2_PREFACE = 'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n';
+const HTTP2_PREFACE_BUFFER = Buffer.from(HTTP2_PREFACE);
+const HTTP2_PREFACE_LENGTH = HTTP2_PREFACE_BUFFER.byteLength;
+const isHTTP2 = (initialData: Uint8Array) => {
+    const comparisonLength = Math.min(HTTP2_PREFACE_LENGTH, initialData.length);
+    return Buffer.from(initialData.subarray(0, comparisonLength))
+        .equals(HTTP2_PREFACE_BUFFER.subarray(0, comparisonLength));
+};
+
 // We guess at HTTP by checking the initial bytes match a known HTTP method + following space.
 // Not super precise, but generally pretty good (rules out TLS, proxy protocol, etc).
 const METHOD_PREFIXES = http.METHODS.map(m => m + ' ');
@@ -28,7 +37,8 @@ export class ConnectionProcessor {
 
     constructor(
         private tlsHandler: ConnectionHandler,
-        private httpHandler: ConnectionHandler
+        private httpHandler: ConnectionHandler,
+        private http2Handler: ConnectionHandler
     ) {}
 
     readonly processConnection = (connection: stream.Duplex) => {
@@ -38,7 +48,7 @@ export class ConnectionProcessor {
 
         const initialData: Buffer | null = connection.read();
         if (initialData === null) {
-            // Wait until this is actually readable
+            // Wait until we have more bytes available (at least 3 to differentiate H2 & H1):
             connection.once('readable', () => this.processConnection(connection));
             return;
         } else {
@@ -56,8 +66,9 @@ export class ConnectionProcessor {
 
         if (isTLS(initialData)) {
             this.tlsHandler(connection);
+        } else if (isHTTP2(initialData)) {
+            this.http2Handler(connection);
         } else if (couldBeHttp(initialData)) {
-            // Assume it's otherwise HTTP (for now)
             this.httpHandler(connection);
         } else {
             console.error('Got unrecognized connection data:', initialData);

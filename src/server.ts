@@ -1,6 +1,6 @@
 import * as net from 'net';
 
-import { createHttpHandler } from './http-handler.js';
+import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
 import { createTlsHandler } from './tls-handler.js';
 import { ConnectionProcessor } from './process-connection.js';
 
@@ -81,16 +81,23 @@ async function generateTlsConfig(options: ServerOptions) {
 
 const createTcpHandler = async (options: ServerOptions = {}) => {
     const connProcessor = new ConnectionProcessor(
-        (conn) => tlsHandler.emit('connection', conn),
-        (conn) => httpHandler.emit('connection', conn)
+        (conn) => {
+            conn.pause();
+            tlsHandler.emit('connection', conn);
+        },
+        (conn) => httpHandler.emit('connection', conn),
+        (conn) => http2Handler.emit('connection', conn)
     );
 
     const tlsConfig = await generateTlsConfig(options);
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 
-    const httpHandler = createHttpHandler({
+    const httpConfig = {
         acmeChallengeCallback: tlsConfig.acmeChallenge
-    });
+    };
+
+    const httpHandler = createHttp1Handler(httpConfig);
+    const http2Handler = createHttp2Handler(httpConfig);
 
     return (conn: net.Socket) => {
         try {
