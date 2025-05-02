@@ -67,10 +67,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.sha }}
 
+      - name: Extract sha-* image label
+        id: extract-sha
+        run: |
+          sha_tag=$(echo "${{ steps.meta.outputs.tags }}" | grep -o 'sha-[^[:space:]]*' | head -n 1)
+          echo "sha_tag=$sha_tag" >> $GITHUB_OUTPUT
+
       - name: Deploy to Bunny
         uses: BunnyWay/actions/container-update-image@container-update-image_0.1.1
         with:
           app_id: ${{ vars.BUNNY_APP_ID }}
           api_key: ${{ secrets.BUNNY_API_KEY }}
           container: TestServer
-          image_tag: "${{ github.sha }}"
+          image_tag: "${{ steps.extract-sha.outputs.sha_tag }}"
