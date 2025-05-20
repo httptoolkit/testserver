@@ -1,3 +1,4 @@
+import { TLSSocket } from 'tls';
 import * as http from 'http';
 import * as http2 from 'http2';
 
@@ -36,7 +37,10 @@ function createHttpRequestHandler(options: {
     rootDomain: string
 }): RequestHandler {
     return async function handleRequest(req, res) {
-        const url = new URL(req.url!, `http://${req.headers.host}`);
+        const protocol = `http${req.socket instanceof TLSSocket ? 's' : ''}`;
+        const url = new URL(req.url!, `${protocol}://${
+            req.headers[':authority'] ?? req.headers['host']
+        }`);
         const path = url.pathname;
 
         // --- A few initial administrative endpoints, that don't support CORS etc etc ---
