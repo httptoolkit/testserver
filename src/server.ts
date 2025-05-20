@@ -93,7 +93,8 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 
     const httpConfig = {
-        acmeChallengeCallback: tlsConfig.acmeChallenge
+        acmeChallengeCallback: tlsConfig.acmeChallenge,
+        rootDomain: options.domain ?? 'localhost'
     };
 
     const httpHandler = createHttp1Handler(httpConfig);

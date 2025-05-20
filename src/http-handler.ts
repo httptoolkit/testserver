@@ -32,7 +32,8 @@ type RequestHandler = (
 ) => Promise<void>;
 
 function createHttpRequestHandler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined
+    acmeChallengeCallback: (token: string) => string | undefined,
+    rootDomain: string
 }): RequestHandler {
     return async function handleRequest(req, res) {
         const url = new URL(req.url!, `http://${req.headers.host}`);
@@ -57,7 +58,11 @@ function createHttpRequestHandler(options: {
             return;
         }
 
-        if (path === '/') {
+        const hostnamePrefix = url.hostname.endsWith(options.rootDomain)
+            ? url.hostname.slice(0, -options.rootDomain.length - 1)
+            : undefined;
+
+        if (path === '/' && !hostnamePrefix) {
             res.writeHead(307, {
                 location: 'https://github.com/httptoolkit/testserver/'
             });
@@ -75,7 +80,7 @@ function createHttpRequestHandler(options: {
         }
 
         const matchingEndpoint = httpEndpoints.find((endpoint) =>
-            endpoint.matchPath(path)
+            endpoint.matchPath(path, hostnamePrefix)
         );
 
         if (matchingEndpoint) {
@@ -94,7 +99,8 @@ function createHttpRequestHandler(options: {
 }
 
 export function createHttp1Handler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined
+    acmeChallengeCallback: (token: string) => string | undefined,
+    rootDomain: string
 }) {
     const handleRequest = createHttpRequestHandler(options);
     const handler = new http.Server(async (req, res) => {
@@ -124,7 +130,8 @@ export function createHttp1Handler(options: {
 }
 
 export function createHttp2Handler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined
+    acmeChallengeCallback: (token: string) => string | undefined,
+    rootDomain: string
 }) {
     const handleRequest = createHttpRequestHandler(options);
     const handler = http2.createServer(async (req, res) => {

@@ -16,7 +16,7 @@ export type HttpHandler = (
 ) => MaybePromise<void>;
 
 export interface HttpEndpoint {
-    matchPath: (path: string) => boolean;
+    matchPath: (path: string, hostnamePrefix: string | undefined) => boolean;
     handle: HttpHandler;
 }
 
@@ -35,3 +35,4 @@ export * from './http/json.js';
 export * from './http/trailers.js';
 export * from './http/error/close.js';
 export * from './http/error/reset.js';
+export * from './http/example-page.js';
