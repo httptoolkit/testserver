@@ -67,6 +67,11 @@ function createHttpRequestHandler(options: {
             : undefined;
 
         if (path === '/' && (!hostnamePrefix || hostnamePrefix === 'www')) {
+            console.log(`Request to root page at ${path}${
+                hostnamePrefix
+                    ? ` ('${hostnamePrefix}' prefix)`
+                    : ` (${options.rootDomain})`
+            }`);
             res.writeHead(307, {
                 location: 'https://github.com/httptoolkit/testserver/'
             });
@@ -90,7 +95,7 @@ function createHttpRequestHandler(options: {
         if (matchingEndpoint) {
             console.log(`Request to ${path}${
                 hostnamePrefix
-                    ? ` (${hostnamePrefix} prefix)`
+                    ? ` ('${hostnamePrefix}' prefix)`
                     : ` (${options.rootDomain})`
             } matched endpoint ${matchingEndpoint.name}`);
             await matchingEndpoint.handle(req, res, {
