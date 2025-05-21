@@ -11,4 +11,6 @@ RUN npm ci --omit=dev
 
 COPY src/ src/
 
+ARG GIT_HASH
+ENV VERSION_HASH=${GIT_HASH}
 CMD ["npm", "start"]
