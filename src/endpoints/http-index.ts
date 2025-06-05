@@ -32,6 +32,7 @@ export * from './http/delay.js';
 export * from './http/cookies.js'
 export * from './http/basic-auth.js';
 export * from './http/json.js';
+export * from './http/xml.js';
 export * from './http/trailers.js';
 export * from './http/error/close.js';
 export * from './http/error/reset.js';
