@@ -27,7 +27,7 @@ describe('Encoding Endpoints', () => {
         },
         {
             name: 'deflate',
-            expectedJson: { deflate: true }
+            expectedJson: { deflated: true }
         },
         {
             name: 'brotli',
