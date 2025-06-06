@@ -38,3 +38,8 @@ export * from './http/error/close.js';
 export * from './http/error/reset.js';
 export * from './http/example-page.js';
 export * from './http/version.js';
+export * from './http/encoding/gzip.js';
+export * from './http/encoding/deflate.js';
+export * from './http/encoding/zstd.js';
+export * from './http/encoding/brotli.js';
+export * from './http/encoding/identity.js';
