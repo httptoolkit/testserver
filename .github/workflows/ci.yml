@@ -74,7 +74,7 @@ jobs:
           echo "sha_tag=$sha_tag" >> $GITHUB_OUTPUT
 
       - name: Deploy to Bunny
-        uses: BunnyWay/actions/container-update-image@container-update-image_0.1.1
+        uses: BunnyWay/actions/container-update-image@container-update-image_0.1.2
         with:
           app_id: ${{ vars.BUNNY_APP_ID }}
           api_key: ${{ secrets.BUNNY_API_KEY }}
