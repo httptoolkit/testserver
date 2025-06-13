@@ -66,7 +66,7 @@ Connection: keep-alive
         expect(result).to.equal('Failed: Client network socket disconnected before secure TLS connection was established');
     });
 
-    it("negotiates http2 for http2.*", async () => {
+    it("negotiate http2 for http2.*", async () => {
         const conn = tls.connect({
             port: serverPort,
             servername: 'http2.localhost',
@@ -83,7 +83,7 @@ Connection: keep-alive
         expect(selectedProtocol).to.equal('h2');
     });
 
-    it("negotiates http1.1 for http1.*", async () => {
+    it("negotiate http1.1 for http1.*", async () => {
         const conn = tls.connect({
             port: serverPort,
             servername: 'http1.localhost',
@@ -100,11 +100,29 @@ Connection: keep-alive
         expect(selectedProtocol).to.equal('http/1.1');
     });
 
-    it("follows client ALPN preference if all are supported", async () => {
+    it("can use multiple SNI parts to control ALPN preference order", async () => {
+        const conn = tls.connect({
+            port: serverPort,
+            servername: 'http2.http1.localhost',
+            ALPNProtocols: ['http/1.1', 'h2'],
+            rejectUnauthorized: false // Needed as it's untrusted
+        });
+
+        const selectedProtocol = await new Promise<any>((resolve, reject) => {
+            conn.on('secureConnect', () => resolve(conn.alpnProtocol));
+            conn.on('error', reject);
+        });
+        conn.destroy();
+
+        expect(selectedProtocol).to.equal('h2');
+    });
+
+    it("overrides client ALPN preference if no preference is shown, unless forced", async () => {
         await Promise.all([
-            ['h2', 'http/1.1'],
-            ['http/1.1', 'h2']
-        ].map(async (protocols) => {
+            { protocols: ['h2', 'http/1.1'], expected: 'http/1.1' },
+            { protocols: ['http/1.1', 'h2'], expected: 'http/1.1' },
+            { protocols: ['h2'], expected: 'h2' }
+        ].map(async ({ protocols, expected }) => {
             const conn = tls.connect({
                 port: serverPort,
                 servername: 'do-anything.localhost',
@@ -117,7 +135,7 @@ Connection: keep-alive
                 conn.on('error', reject);
             });
             conn.destroy();
-            expect(selectedProtocol).to.equal(protocols[0]);
+            expect(selectedProtocol).to.equal(expected);
         }));
     });
 

@@ -14,7 +14,8 @@ interface TlsHandlerConfig {
     };
 }
 
-const supportedProtocolFilters: { [key: string]: string } = {
+const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
+const SNI_PROTOCOL_FILTERS: { [key: string]: string } = {
     'http2': 'h2',
     'http1': 'http/1.1'
 };
@@ -41,14 +42,16 @@ export async function createTlsHandler(
             const serverNameParts = getSNIPrefixParts(servername, tlsConfig.rootDomain);
 
             let protocolFilterNames = serverNameParts.filter(protocol =>
-                supportedProtocolFilters[protocol]
+                SNI_PROTOCOL_FILTERS[protocol]
             );
             const serverProtocols = protocolFilterNames.length > 0
-                ? protocolFilterNames.map(protocol => supportedProtocolFilters[protocol])
-                : Object.values(supportedProtocolFilters);
+                ? protocolFilterNames.map(protocol => SNI_PROTOCOL_FILTERS[protocol])
+                : DEFAULT_ALPN_PROTOCOLS;
 
-            // Follow the clients preferences, within the protocols we support:
-            return clientProtocols.find(protocol => serverProtocols.includes(protocol));
+            // Enforce our own protocol preference over the client's (they can
+            // specify a preference via SNI, if they so choose). This also means
+            // we accept a preference order in our SNI as well e.g. http2.http1.*.
+            return serverProtocols.find(protocol => clientProtocols.includes(protocol));
         },
         SNICallback: (domain: string, cb: Function) => {
             const serverNameParts = getSNIPrefixParts(domain, tlsConfig.rootDomain);
