@@ -41,6 +41,7 @@ async function generateTlsConfig(options: ServerOptions) {
     if (!options.acmeProvider) {
         console.log('Using self signed certificates');
         return {
+            rootDomain,
             key: defaultCert.key,
             cert: defaultCert.cert,
             ca: caCert.cert,
@@ -62,6 +63,7 @@ async function generateTlsConfig(options: ServerOptions) {
     acmeCA.tryGetCertificateSync(rootDomain); // Preload the root domain every time
 
     return {
+        rootDomain,
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
