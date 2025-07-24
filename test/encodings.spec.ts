@@ -36,8 +36,7 @@ describe('Encoding Endpoints', () => {
         },
         {
             name: 'zstd',
-            expectedJson: { zstd: true },
-            decoder: zlib.zstdDecompressSync
+            expectedJson: { zstd: true }
         },
         {
             name: 'identity',
@@ -45,7 +44,7 @@ describe('Encoding Endpoints', () => {
         }
     ];
 
-    testCases.forEach(({ name, encodingName, expectedJson, decoder }) => {
+    testCases.forEach(({ name, encodingName, expectedJson }) => {
         it(`/encoding/${name} should return decodeable content`, async () => {
             const url = `http://localhost:${serverPort}/encoding/${name}`;
             const response = await fetch(url);
@@ -53,9 +52,7 @@ describe('Encoding Endpoints', () => {
             expect(response.status).to.equal(200);
             expect(response.headers.get('content-encoding')).to.equal(encodingName || name);
 
-            const actualJson = decoder
-                ? JSON.parse(decoder(await response.arrayBuffer()).toString('utf8'))
-                : await response.json(); // Decodeable by fetch automatically
+            const actualJson = await response.json(); // Content is decodeable by fetch automatically
 
             expect(actualJson).to.deep.equals(expectedJson);
         });
