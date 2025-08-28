@@ -76,6 +76,6 @@ jobs:
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy to fly.io
-        run: flyctl deploy --remote-only
+        run: flyctl deploy --remote-only --image httptoolkit/testserver:${{ steps.extract-sha.outputs.sha_tag }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_DEPLOY_KEY }}
