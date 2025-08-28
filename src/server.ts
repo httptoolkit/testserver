@@ -14,10 +14,10 @@ declare module 'stream' {
     }
 }
 
-
 interface ServerOptions {
     domain?: string;
     acmeProvider?: AcmeProvider;
+    proactiveCertDomains?: string[];
     certCacheDir?: string;
     eabConfig?: ExternalAccessBindingConfig;
 }
@@ -64,6 +64,7 @@ async function generateTlsConfig(options: ServerOptions) {
 
     return {
         rootDomain,
+        proactiveCertDomains: options.proactiveCertDomains,
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
@@ -130,6 +131,7 @@ if (wasRunDirectly) {
 
     createTcpHandler({
         domain: process.env.ROOT_DOMAIN,
+        proactiveCertDomains: process.env.PROACTIVE_CERT_DOMAINS?.split(','),
         acmeProvider: process.env.ACME_PROVIDER as AcmeProvider | undefined,
         eabConfig: process.env.ACME_EAB_KID && process.env.ACME_EAB_HMAC
             ? { kid: process.env.ACME_EAB_KID, hmacKey: process.env.ACME_EAB_HMAC }

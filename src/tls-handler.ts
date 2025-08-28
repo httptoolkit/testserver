@@ -2,16 +2,20 @@ import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
 
+type CertGenerator = (domain: string) => {
+    key: string,
+    cert: string,
+    ca?: string
+};
+
 interface TlsHandlerConfig {
     rootDomain: string;
+    proactiveCertDomains?: string[];
+
     key: string;
     cert: string;
     ca: string;
-    generateCertificate: (domain: string) => {
-        key: string,
-        cert: string,
-        ca?: string
-    };
+    generateCertificate: CertGenerator;
 }
 
 const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
@@ -26,6 +30,20 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
         : servername;
     return serverNamePrefix.split('.');
 };
+
+const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
+
+function proactivelyRefreshDomains(domains: string[], certGenerator: CertGenerator) {
+    domains.forEach(domain => {
+        console.log(`Proactively checking cert at startup for ${domain}`);
+        certGenerator(domain);
+
+        setInterval(() => {
+            console.log(`Proactively checking cert for ${domain}`);
+            certGenerator(domain);
+        }, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
+    });
+}
 
 export async function createTlsHandler(
     tlsConfig: TlsHandlerConfig,
@@ -73,6 +91,8 @@ export async function createTlsHandler(
             }
         }
     });
+
+    proactivelyRefreshDomains(tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
 
     server.on('secureConnection', (socket) => {
         connProcessor.processConnection(socket);
