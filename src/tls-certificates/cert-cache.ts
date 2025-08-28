@@ -33,7 +33,12 @@ export class PersistentCertCache {
 
         await Promise.all(certFiles.map(async (certName) => {
             if (!certName.endsWith('.cert.json')) {
-                console.log(`Unexpected file in cert dir: ${certName}`);
+                // Linux volumes often have a root lost+found directory, we can just
+                // ignore that.
+                if (certName !== 'lost+found') {
+                    console.log(`Unexpected file in cert dir: ${certName}`);
+                }
+
                 return;
             }
 
