@@ -156,7 +156,7 @@ export class AcmeCA {
                     JSON.stringify(challenge.error)
                 })`)
 
-                this.pendingAcmeChallenges[challenge.token];
+                delete this.pendingAcmeChallenges[challenge.token];
             }
         });
 
