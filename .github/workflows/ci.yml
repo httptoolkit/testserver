@@ -73,10 +73,9 @@ jobs:
           sha_tag=$(echo "${{ steps.meta.outputs.tags }}" | grep -o 'sha-[^[:space:]]*' | head -n 1)
           echo "sha_tag=$sha_tag" >> $GITHUB_OUTPUT
 
-      - name: Deploy to Bunny
-        uses: BunnyWay/actions/container-update-image@container-update-image_0.1.2
-        with:
-          app_id: ${{ vars.BUNNY_APP_ID }}
-          api_key: ${{ secrets.BUNNY_API_KEY }}
-          container: TestServer
-          image_tag: "${{ steps.extract-sha.outputs.sha_tag }}"
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_DEPLOY_KEY }}

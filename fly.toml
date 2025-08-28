@@ -1,0 +1,52 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = 'testserver-host'
+primary_region = 'cdg'
+
+[build]
+  image = 'httptoolkit/testserver:latest'
+
+[env]
+  PORTS = '8080'
+  CERT_CACHE_DIR = '/usr/src/app/cert_dir'
+
+  # If deploying a separate instance and wanting real certificates, customize these:
+  ROOT_DOMAIN = 'testserver.host'
+  PROACTIVE_CERT_DOMAINS = 'testserver.host,example.testserver.host,http1.testserver.host,http2.testserver.host'
+
+  ACME_PROVIDER = 'zerossl' # or 'letsencrypt'
+  # For zerossl you'll need to set ACME_EAB_HMAC and ACME_EAB_KID secrets for auth
+
+[[services]]
+  protocol = "tcp"
+  internal = 8080
+
+  [[services.ports]]
+    port = "80"
+  [[services.ports]]
+    port = "443"
+  [[services.ports]]
+    start_port = 8000
+    end_port = 10000
+
+  # Continually check /echo can return a valid HTTPS response
+  [[services.http_checks]]
+    interval = 10000
+    grace_period = "5s"
+    method = "get"
+    path = "/echo"
+    protocol = "https"
+    timeout = 2000
+    tls_server_name = "testserver.host"
+    tls_skip_verify = true # We don't verify by default, so this works for fresh empty-volume deploys
+
+# If we want to scale out within a single region, where there's already an app in the same region
+# using this volume, we need to fork it and create another with the same name.
+[mounts]
+  source = "cert_data"
+  destination = "/usr/src/app/cert_dir"
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
