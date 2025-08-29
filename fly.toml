@@ -47,6 +47,6 @@ primary_region = 'cdg'
   destination = "/usr/src/app/cert_dir"
 
 [[vm]]
-  memory = '256mb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
