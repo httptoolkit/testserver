@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import * as ACME from 'acme-client';
 import { PersistentCertCache } from './cert-cache.js';
 
@@ -43,15 +44,26 @@ export class AcmeCA {
         })
     );
 
-    getChallengeResponse(token: string) {
-        return this.pendingAcmeChallenges[token];
+    async getChallengeResponse(token: string) {
+        return (await this.acmeClient).getChallengeKeyAuthorization({
+            token,
+            type: 'http-01',
+            url: '',
+            status: 'pending'
+        });
     }
 
     tryGetCertificateSync(domain: string) {
         const cachedCert = this.certCache.getCert(domain);
 
+        if (cachedCert) {
+            console.log(`Found cached cert for ${domain} (hash:${crypto.hash('sha256', cachedCert.cert)}, expiry: ${new Date(cachedCert.expiry).toISOString()})`);
+        }
+
         if (!cachedCert || cachedCert.expiry - Date.now() < ONE_WEEK) {
-            this.getCertificate(domain); // Trigger a cert refresh
+            const attemptId = Math.random().toString(16).slice(2);
+            console.log(`Starting async cert update (${attemptId}) for domain ${domain}`);
+            this.getCertificate(domain, { attemptId }); // Trigger a cert refresh
         }
 
         return cachedCert;
@@ -59,17 +71,21 @@ export class AcmeCA {
 
     private async getCertificate(
         domain: string,
-        options: { forceRegenerate?: boolean } = {}
+        options: { forceRegenerate?: boolean, attemptId: string }
     ): Promise<AcmeGeneratedCertificate> {
+        if (!options.attemptId) {
+            options.attemptId = Math.random().toString(16).slice(2);
+        }
+
         const cachedCert = this.certCache.getCert(domain);
         if (cachedCert && !options.forceRegenerate) {
             // If we have this cert in the cache, we generally want to use that.
 
             if (cachedCert.expiry <= Date.now() - ONE_MINUTE) {
                 // Expired - clear this data and get a new certificate somehow
-                console.log(`Renewing totally expired certificate for ${domain}`);
+                console.log(`Renewing totally expired certificate for ${domain} (${options.attemptId})`);
                 this.certCache.clearCache(domain);
-                return this.getCertificate(domain);
+                return this.getCertificate(domain, { attemptId: options.attemptId });
             }
 
             if (
@@ -78,50 +94,52 @@ export class AcmeCA {
             ) {
                 // Not yet expired, but expiring soon - we want to refresh this certificate, but
                 // we're OK to do it async and keep using the current one for now.
-                console.log(`Renewing near-expiry certificate for ${domain}`);
+                console.log(`Renewing near-expiry certificate for ${domain} (${options.attemptId})`);
 
                 this.pendingCertRenewals[domain] = this.getCertificate(domain, {
-                    forceRegenerate: true
+                    forceRegenerate: true,
+                    attemptId: options.attemptId
                 });
             }
 
             return cachedCert;
         }
 
-        if (!cachedCert) console.log(`No cached cert for ${domain}`);
-        else if (options.forceRegenerate) console.log(`Force regenerating cert for ${domain}`);
+        if (!cachedCert) console.log(`No cached cert for ${domain} (${options.attemptId})`);
+        else if (options.forceRegenerate) console.log(`Force regenerating cert for ${domain} (${options.attemptId})`);
 
         if (this.pendingCertRenewals[domain] && !options.forceRegenerate) {
             // Coalesce updates for pending certs into one
             return this.pendingCertRenewals[domain]!;
         }
 
-        const refreshPromise: Promise<AcmeGeneratedCertificate> = this.requestNewCertificate(domain)
-            .then((certData) => {
-                if (
-                    this.pendingCertRenewals[domain] &&
-                    this.pendingCertRenewals[domain] !== refreshPromise
-                ) {
-                    // Don't think this should happen, but if we're somehow ever not the current cert
-                    // update, delegate to the 'real' cert update instead.
-                    return this.pendingCertRenewals[domain]!;
-                }
+        const refreshPromise: Promise<AcmeGeneratedCertificate> = this.requestNewCertificate(domain, {
+            attemptId: options.attemptId
+        }).then((certData) => {
+            if (
+                this.pendingCertRenewals[domain] &&
+                this.pendingCertRenewals[domain] !== refreshPromise
+            ) {
+                // Don't think this should happen, but if we're somehow ever not the current cert
+                // update, delegate to the 'real' cert update instead.
+                return this.pendingCertRenewals[domain]!;
+            }
 
-                delete this.pendingCertRenewals[domain];
-                this.certCache.cacheCert({ ...certData, domain });
-                return certData;
-            })
-            .catch((e) => {
-                console.log('Cert request failed', e);
-                return this.getCertificate(domain, { forceRegenerate: true });
-            })
+            delete this.pendingCertRenewals[domain];
+            this.certCache.cacheCert({ ...certData, domain });
+            console.log(`Cert refresh completed for domain ${domain} (${options.attemptId}), hash:${crypto.hash('sha256', certData.cert)}`);
+            return certData;
+        }).catch((e) => {
+            console.log(`Cert refresh failed (${options.attemptId})`, e);
+            return this.getCertificate(domain, { forceRegenerate: true, attemptId: options.attemptId });
+        });
 
         this.pendingCertRenewals[domain] = refreshPromise;
         return refreshPromise;
     }
 
-    private async requestNewCertificate(domain: string): Promise<AcmeGeneratedCertificate> {
-        console.log(`Requesting new certificate for ${domain}`);
+    private async requestNewCertificate(domain: string, options: { attemptId: string }): Promise<AcmeGeneratedCertificate> {
+        console.log(`Requesting new certificate for ${domain} (${options.attemptId})`);
 
         const [key, csr] = await ACME.crypto.createCsr({
             commonName: domain
@@ -134,33 +152,31 @@ export class AcmeCA {
             skipChallengeVerification: true,
             challengeCreateFn: async (_authz, challenge, keyAuth) => {
                 if (challenge.type !== 'http-01') {
-                    throw new Error(`Unexpected ${challenge.type} challenge`);
+                    throw new Error(`Unexpected ${challenge.type} challenge (${options.attemptId})`);
                 }
 
-                console.log(`Preparing for ${challenge.type} ACME challenge`);
+                console.log(`Preparing for ${challenge.type} ACME challenge ${challenge.token} (${options.attemptId})`);
 
                 this.pendingAcmeChallenges[challenge.token] = keyAuth;
             },
             challengeRemoveFn: async (_authz, challenge) => {
                 if (challenge.type !== 'http-01') {
-                    throw new Error(`Unexpected ${challenge.type} challenge`);
+                    throw new Error(`Unexpected ${challenge.type} challenge (${options.attemptId})`);
                 }
 
                 console.log(`Removing ACME ${
                     challenge.status
                 } ${
                     challenge.type
-                } challenge (validated: ${
-                    challenge.validated
-                }, error: ${
-                    JSON.stringify(challenge.error)
-                })`)
+                } challenge ${
+                    JSON.stringify(challenge)
+                }) (${options.attemptId})`);
 
                 delete this.pendingAcmeChallenges[challenge.token];
             }
         });
 
-        console.log(`Successfully ACMEd new certificate for ${domain}`);
+        console.log(`Successfully ACMEd new certificate for ${domain} (${options.attemptId})`);
 
         return {
             key: key.toString(),

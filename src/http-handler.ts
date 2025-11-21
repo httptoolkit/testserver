@@ -1,6 +1,7 @@
 import { TLSSocket } from 'tls';
 import * as http from 'http';
 import * as http2 from 'http2';
+import { MaybePromise } from '@httptoolkit/util';
 
 import { clearArray } from './util.js';
 
@@ -33,7 +34,7 @@ type RequestHandler = (
 ) => Promise<void>;
 
 function createHttpRequestHandler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined,
+    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
     rootDomain: string
 }): RequestHandler {
     return async function handleRequest(req, res) {
@@ -47,7 +48,7 @@ function createHttpRequestHandler(options: {
         if (path.startsWith('/.well-known/acme-challenge/')) {
             console.log("Got ACME challenge request", path);
             const token = path.split('/')[3];
-            const response = options.acmeChallengeCallback(token);
+            const response = await options.acmeChallengeCallback(token);
             if (response) {
                 res.writeHead(200);
                 res.end(response);
@@ -112,7 +113,7 @@ function createHttpRequestHandler(options: {
 }
 
 export function createHttp1Handler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined,
+    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
     rootDomain: string
 }) {
     const handleRequest = createHttpRequestHandler(options);
@@ -143,7 +144,7 @@ export function createHttp1Handler(options: {
 }
 
 export function createHttp2Handler(options: {
-    acmeChallengeCallback: (token: string) => string | undefined,
+    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
     rootDomain: string
 }) {
     const handleRequest = createHttpRequestHandler(options);

@@ -1,5 +1,6 @@
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as crypto from 'node:crypto';
 
 interface CachedCertificate {
     domain: string;
@@ -75,7 +76,7 @@ export class PersistentCertCache {
             console.warn(`Failed to cache to disk certificate data for ${domain}`);
         });
 
-        console.log(`Cached cert for ${domain}`);
+        console.log(`Cached cert for ${domain}, hash:${crypto.hash('sha256', cert.cert)}`);
         return this.cache[domain];
     }
 
