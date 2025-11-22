@@ -94,10 +94,11 @@ export class AcmeCA {
                     // we're OK to do it async and keep using the current one for now.
                     console.log(`Renewing near-expiry certificate for ${domain} (${options.attemptId})`);
 
-                    this.pendingCertRenewals[domain] = Object.assign(this.getCertificate(domain, {
-                        forceRegenerate: true,
-                        attemptId: options.attemptId
-                    }), { id: options.attemptId });
+                    // Trigger update in the background, catch any errors. This will add itself to pendingCertRenewals
+                    // so no need to update that separately.
+                    this.getCertificate(domain, { forceRegenerate: true, attemptId: options.attemptId }).catch((e) => {
+                        console.log(`Background <1 week refresh failed with ${e.message}`);
+                    });
                 } else {
                     console.log(`Certificate refresh already pending for ${domain} (${options.attemptId}) from attempt ${
                         this.pendingCertRenewals[domain]!.id
