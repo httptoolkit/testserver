@@ -39,6 +39,18 @@ function createHttpRequestHandler(options: {
 }): RequestHandler {
     return async function handleRequest(req, res) {
         const protocol = `http${req.socket instanceof TLSSocket ? 's' : ''}`;
+
+        if (!req.url!.startsWith('/')) {
+            // Absolute URL. Block requests unless they're for us personally. We
+            // don't accept proxying here (lots of attempted abuse load).
+            const url = new URL(req.url!);
+            if (!url.hostname.endsWith(options.rootDomain)) {
+                res.writeHead(400, { connection: 'close' });
+                res.end();
+                return;
+            }
+        }
+
         const url = new URL(req.url!, `${protocol}://${
             req.headers[':authority'] ?? req.headers['host']
         }`);
