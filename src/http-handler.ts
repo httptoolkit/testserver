@@ -45,6 +45,7 @@ function createHttpRequestHandler(options: {
             // don't accept proxying here (lots of attempted abuse load).
             const url = new URL(req.url!);
             if (!url.hostname.endsWith(options.rootDomain)) {
+                console.log("Rejecting attempted proxy request to", req.url);
                 res.writeHead(400, { connection: 'close' });
                 res.end();
                 return;
