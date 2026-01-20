@@ -125,7 +125,7 @@ Connection: keep-alive
         ].map(async ({ protocols, expected }) => {
             const conn = tls.connect({
                 port: serverPort,
-                servername: 'do-anything.localhost',
+                servername: 'localhost',
                 ALPNProtocols: protocols,
                 rejectUnauthorized: false // Needed as it's untrusted
             });

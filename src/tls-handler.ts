@@ -28,8 +28,18 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
     const serverNamePrefix = servername.endsWith(rootDomain)
         ? servername.slice(0, -rootDomain.length - 1)
         : servername;
+
+    if (serverNamePrefix === '') return [];
     return serverNamePrefix.split('.');
 };
+
+const VALID_SNI_PARTS = new Set([
+    ...Object.keys(SNI_PROTOCOL_FILTERS),
+    'no-tls',
+    'example'
+]);
+
+const MAX_SNI_PARTS = 3;
 
 const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
 
@@ -73,6 +83,15 @@ export async function createTlsHandler(
         },
         SNICallback: (domain: string, cb: Function) => {
             const serverNameParts = getSNIPrefixParts(domain, tlsConfig.rootDomain);
+
+            if (serverNameParts.length > MAX_SNI_PARTS) {
+                return cb(new Error(`Too many SNI parts (${serverNameParts.length})`), null);
+            }
+
+            if (serverNameParts.some(part => !VALID_SNI_PARTS.has(part))) {
+                return cb(new Error(`Invalid SNI part in '${domain}'`), null);
+            }
+
             if (serverNameParts.includes('no-tls')) {
                 // This closes the unwanted TLS connection without response
                 return cb(new Error('Intentionally rejecting TLS connection'), null);
