@@ -234,4 +234,44 @@ Connection: keep-alive
 
     });
 
+    describe("expired certificates", () => {
+
+        it("returns a certificate with validity dates in the past", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'expired.localhost',
+                rejectUnauthorized: false
+            });
+
+            const cert = await new Promise<tls.PeerCertificate>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve(conn.getPeerCertificate()));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            const now = Date.now();
+            expect(new Date(cert.valid_to).getTime()).to.be.lessThan(now);
+            expect(new Date(cert.valid_from).getTime()).to.be.lessThan(now);
+        });
+
+        it("can combine expired with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2.expired.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(new Date(cert.valid_to).getTime()).to.be.lessThan(Date.now());
+            expect(protocol).to.equal('h2');
+        });
+
+    });
+
 });

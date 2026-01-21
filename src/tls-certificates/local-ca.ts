@@ -128,6 +128,11 @@ let KEY_PAIR: {
     length: number
 } | undefined;
 
+interface CertGenerationOptions {
+    selfSigned?: boolean;
+    expired?: boolean;
+}
+
 export class LocalCA {
     private caCert: forge.pki.Certificate;
     private caKey: forge.pki.PrivateKey;
@@ -177,128 +182,78 @@ export class LocalCA {
             domain = `*.${otherParts.join('.')}`;
         }
 
-        let cert = pki.createCertificate();
-
-        cert.publicKey = KEY_PAIR!.publicKey;
-        cert.serialNumber = generateSerialNumber();
-
-        cert.validity.notBefore = new Date();
-        // Make it valid for the last 24h - helps in cases where clocks slightly disagree.
-        cert.validity.notBefore.setDate(cert.validity.notBefore.getDate() - 1);
-
-        cert.validity.notAfter = new Date();
-        // Valid for the next year by default.
-        cert.validity.notAfter.setFullYear(cert.validity.notAfter.getFullYear() + 1);
-
-        cert.setSubject([
-            ...(domain[0] === '*'
-                ? [] // We skip the CN (deprecated, rarely used) for wildcards, since they can't be used here.
-                : [{ name: 'commonName', value: domain }]
-            ),
-            { name: 'countryName', value: this.options?.countryName ?? 'XX' }, // ISO-3166-1 alpha-2 'unknown country' code
-            { name: 'localityName', value: this.options?.localityName ?? 'Unknown' },
-            { name: 'organizationName', value: this.options?.organizationName ?? 'Testserver Test Cert' }
-        ]);
-        cert.setIssuer(this.caCert.subject.attributes);
-
-        const policyList = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-            forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-                forge.asn1.create(
-                    forge.asn1.Class.UNIVERSAL,
-                    forge.asn1.Type.OID,
-                    false,
-                    forge.asn1.oidToDer('2.5.29.32.0').getBytes() // Mark all as Domain Verified
-                )
-            ])
-        ]);
-
-        cert.setExtensions([
-            { name: 'basicConstraints', cA: false, critical: true },
-            { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, critical: true },
-            { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
-            {
-                name: 'subjectAltName',
-                altNames: [{
-                    type: 2,
-                    value: domain
-                }]
-            },
-            { name: 'certificatePolicies', value: policyList },
-            { name: 'subjectKeyIdentifier' },
-            {
-                name: 'authorityKeyIdentifier',
-                // We have to calculate this ourselves due to
-                // https://github.com/digitalbazaar/forge/issues/462
-                keyIdentifier: (
-                    this.caCert as any // generateSubjectKeyIdentifier is missing from node-forge types
-                ).generateSubjectKeyIdentifier().getBytes()
-            }
-        ]);
-
-        cert.sign(this.caKey, md.sha256.create());
-
-        const generatedCertificate = {
-            key: pki.privateKeyToPem(KEY_PAIR!.privateKey),
-            cert: pki.certificateToPem(cert),
-            ca: pki.certificateToPem(this.caCert)
-        };
-
-        // We cache in memory only - no need to persist these (unlike ACME etc)
-        this.certInMemoryCache[domain] = generatedCertificate;
-
-        // Make sure this gets regenerated in 24 hours, in case this server is running persistently
-        setTimeout(() => {
-            delete this.certInMemoryCache[domain];
-        }, 1000 * 60 * 60 * 24).unref();
-
-        return generatedCertificate;
+        return this.generateCert(domain, domain);
     }
 
     generateSelfSignedCertificate(domain: string) {
-        const cacheKey = `${domain}:self-signed`;
+        return this.generateCert(domain, `${domain}:self-signed`, { selfSigned: true });
+    }
 
+    generateExpiredCertificate(domain: string) {
+        return this.generateCert(domain, `${domain}:expired`, { expired: true });
+    }
+
+    private generateCert(
+        domain: string,
+        cacheKey: string,
+        options: CertGenerationOptions = {}
+    ): LocallyGeneratedCertificate {
         const cachedCert = this.certInMemoryCache[cacheKey];
         if (cachedCert) return cachedCert;
 
         const cert = pki.createCertificate();
-
         cert.publicKey = KEY_PAIR!.publicKey;
         cert.serialNumber = generateSerialNumber();
 
         cert.validity.notBefore = new Date();
-        cert.validity.notBefore.setDate(cert.validity.notBefore.getDate() - 1);
-
         cert.validity.notAfter = new Date();
-        cert.validity.notAfter.setFullYear(cert.validity.notAfter.getFullYear() + 1);
+
+        if (options.expired) {
+            cert.validity.notBefore.setDate(cert.validity.notBefore.getDate() - 2);
+            cert.validity.notAfter.setDate(cert.validity.notAfter.getDate() - 1);
+        } else {
+            cert.validity.notBefore.setDate(cert.validity.notBefore.getDate() - 1);
+            cert.validity.notAfter.setFullYear(cert.validity.notAfter.getFullYear() + 1);
+        }
 
         const subject = [
-            { name: 'commonName', value: domain },
+            ...(domain[0] === '*'
+                ? [] // We skip the CN (deprecated, rarely used) for wildcards, since they can't be used here.
+                : [{ name: 'commonName', value: domain }]
+            ),
             { name: 'countryName', value: this.options?.countryName ?? 'XX' },
             { name: 'localityName', value: this.options?.localityName ?? 'Unknown' },
             { name: 'organizationName', value: this.options?.organizationName ?? 'Testserver Test Cert' }
         ];
 
         cert.setSubject(subject);
-        cert.setIssuer(subject); // Self-signed: issuer = subject
+        cert.setIssuer(options.selfSigned ? subject : this.caCert.subject.attributes);
 
-        cert.setExtensions([
+        const extensions: any[] = [
             { name: 'basicConstraints', cA: false, critical: true },
             { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, critical: true },
             { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
-            {
-                name: 'subjectAltName',
-                altNames: [{ type: 2, value: domain }]
-            },
+            { name: 'subjectAltName', altNames: [{ type: 2, value: domain }] },
             { name: 'subjectKeyIdentifier' }
-        ]);
+        ];
 
-        cert.sign(KEY_PAIR!.privateKey, md.sha256.create()); // Self-signed: sign with own key
+        if (!options.selfSigned) {
+            extensions.push({
+                name: 'authorityKeyIdentifier',
+                // We have to calculate this ourselves due to
+                // https://github.com/digitalbazaar/forge/issues/462
+                keyIdentifier: (this.caCert as any).generateSubjectKeyIdentifier().getBytes()
+            });
+        }
+
+        cert.setExtensions(extensions);
+        cert.sign(options.selfSigned ? KEY_PAIR!.privateKey : this.caKey, md.sha256.create());
 
         const certPem = pki.certificateToPem(cert);
         const generatedCertificate = {
             key: pki.privateKeyToPem(KEY_PAIR!.privateKey),
             cert: certPem,
-            ca: certPem // Self-signed: cert is its own CA
+            ca: options.selfSigned ? certPem : pki.certificateToPem(this.caCert)
         };
 
         this.certInMemoryCache[cacheKey] = generatedCertificate;

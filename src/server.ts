@@ -46,9 +46,8 @@ async function generateTlsConfig(options: ServerOptions) {
             cert: defaultCert.cert,
             ca: caCert.cert,
             generateCertificate: (domain: string, mode?: CertMode) => {
-                if (mode === 'self-signed') {
-                    return ca.generateSelfSignedCertificate(domain);
-                }
+                if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
+                if (mode === 'expired') return ca.generateExpiredCertificate(domain);
                 return ca.generateCertificate(domain);
             },
             acmeChallenge: () => undefined // Not supported
@@ -74,9 +73,8 @@ async function generateTlsConfig(options: ServerOptions) {
         cert: defaultCert.cert,
         ca: caCert.cert,
         generateCertificate: (domain: string, mode?: CertMode) => {
-            if (mode === 'self-signed') {
-                return ca.generateSelfSignedCertificate(domain);
-            }
+            if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
+            if (mode === 'expired') return ca.generateExpiredCertificate(domain);
 
             if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {
                 const cert = acmeCA.tryGetCertificateSync(domain);
