@@ -11,6 +11,9 @@ import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 declare module 'stream' {
     interface Duplex {
         receivedData?: Buffer[];
+        // Pipelining detection: tracks concurrent requests
+        requestsInBatch?: number;
+        pipelining?: boolean;
     }
 }
 
@@ -48,6 +51,7 @@ async function generateTlsConfig(options: ServerOptions) {
             generateCertificate: (domain: string, mode?: CertMode) => {
                 if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
                 if (mode === 'expired') return ca.generateExpiredCertificate(domain);
+                // 'revoked' mode requires ACME - falls through to normal cert without it
                 return ca.generateCertificate(domain);
             },
             acmeChallenge: () => undefined // Not supported
@@ -80,6 +84,13 @@ async function generateTlsConfig(options: ServerOptions) {
                 const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(rootDomain);
                 if (expiredAcmeCert) return expiredAcmeCert;
                 return ca.generateExpiredCertificate(domain);
+            }
+
+            if (mode === 'revoked') {
+                // Try to get a revoked ACME cert; fall back to normal cert if not yet available
+                const revokedAcmeCert = acmeCA.tryGetRevokedCertificateSync(rootDomain);
+                if (revokedAcmeCert) return revokedAcmeCert;
+                // No LocalCA fallback for revoked - just use normal cert until ACME one is ready
             }
 
             if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {

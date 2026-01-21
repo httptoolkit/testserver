@@ -141,8 +141,18 @@ async function handle(req: HttpRequest, res: HttpResponse) {
     }
 
     // HTTP/1.x: return raw request data
+    // Defer briefly to allow other pipelined requests to register
+    await new Promise<void>(resolve => process.nextTick(resolve));
+
+    if (req.socket.pipelining) {
+        res.writeHead(400);
+        res.end('Echo endpoint does not support request pipelining. Send requests sequentially or use HTTP/2 multiplexing instead.');
+        return;
+    }
+
     await streamConsumers.buffer(req);
     const rawData = Buffer.concat(req.socket.receivedData ?? []);
+
     res.writeHead(200, {
         'Content-Length': Buffer.byteLength(rawData)
     });

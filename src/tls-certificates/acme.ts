@@ -71,6 +71,60 @@ export class AcmeCA {
         return cachedCert;
     }
 
+    // Returns an ACME cert that has been revoked. Issues once, revokes, never renews.
+    // Returns undefined if no revoked ACME cert is available yet (caller should use LocalCA fallback).
+    tryGetRevokedCertificateSync(domain: string) {
+        const cacheKey = `${domain}:revoked`;
+        const cachedCert = this.certCache.getCert(cacheKey);
+
+        if (cachedCert) {
+            console.log(`Found cached revoked cert for ${domain}`);
+            return cachedCert;
+        }
+
+        // No cached cert - issue and revoke one in the background
+        const attemptId = Math.random().toString(16).slice(2);
+        console.log(`No revoked cert cached for ${domain}, issuing and revoking new one (${attemptId})`);
+        this.issueRevokedCertificate(domain, cacheKey, attemptId);
+
+        return undefined;
+    }
+
+    private async issueRevokedCertificate(domain: string, cacheKey: string, attemptId: string) {
+        if (this.pendingCertRenewals[cacheKey]) {
+            console.log(`Revoked cert already being issued for ${domain} (${attemptId})`);
+            return;
+        }
+
+        const refreshPromise = Object.assign(
+            this.requestAndRevokeCertificate(domain, { attemptId }).then((certData) => {
+                delete this.pendingCertRenewals[cacheKey];
+                this.certCache.cacheCert({ ...certData, domain: cacheKey });
+                console.log(`Revoked cert issued and cached for ${domain} (${attemptId})`);
+                return certData;
+            }).catch((e) => {
+                delete this.pendingCertRenewals[cacheKey];
+                console.log(`Revoked cert generation failed for ${domain} (${attemptId}):`, e.message);
+                throw e;
+            }),
+            { id: attemptId }
+        );
+
+        this.pendingCertRenewals[cacheKey] = refreshPromise;
+    }
+
+    private async requestAndRevokeCertificate(domain: string, options: { attemptId: string }): Promise<AcmeGeneratedCertificate> {
+        console.log(`Requesting certificate to revoke for ${domain} (${options.attemptId})`);
+
+        const certData = await this.requestNewCertificate(domain, options);
+
+        console.log(`Revoking certificate for ${domain} (${options.attemptId})`);
+        await (await this.acmeClient).revokeCertificate(certData.cert);
+        console.log(`Certificate revoked for ${domain} (${options.attemptId})`);
+
+        return certData;
+    }
+
     // Returns an ACME cert only if it has actually expired. Issues once, never renews.
     // Returns undefined if no expired ACME cert is available (caller should use LocalCA fallback).
     tryGetExpiredCertificateSync(domain: string) {

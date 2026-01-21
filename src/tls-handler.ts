@@ -2,11 +2,11 @@ import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
 
-export const CERT_MODES = ['wrong-host', 'self-signed', 'expired'] as const;
+export const CERT_MODES = ['wrong-host', 'self-signed', 'expired', 'revoked'] as const;
 export type CertMode = typeof CERT_MODES[number];
 
 // Modes that require special certificate generation (vs just domain remapping)
-const CERT_GENERATION_MODES = new Set<CertMode>(['self-signed', 'expired']);
+const CERT_GENERATION_MODES = new Set<CertMode>(['self-signed', 'expired', 'revoked']);
 
 export type CertGenerator = (domain: string, mode?: CertMode) => {
     key: string,

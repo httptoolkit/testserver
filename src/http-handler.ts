@@ -143,6 +143,13 @@ export function createHttp1Handler(options: {
 }) {
     const handleRequest = createHttpRequestHandler(options);
     const handler = new http.Server(async (req, res) => {
+        // Track concurrent requests on this socket to detect pipelining
+        const socket = req.socket;
+        socket.requestsInBatch = (socket.requestsInBatch || 0) + 1;
+        if (socket.requestsInBatch > 1) {
+            socket.pipelining = true;
+        }
+
         try {
             console.log(`Handling H1 request to ${req.url}`);
             await handleRequest(req, res);
@@ -159,6 +166,10 @@ export function createHttp1Handler(options: {
         } finally {
             // Reset for next request on keep-alive connections
             req.socket.receivedData = [];
+            req.socket.requestsInBatch!--;
+            if (req.socket.requestsInBatch === 0) {
+                req.socket.pipelining = false;
+            }
         }
     });
 

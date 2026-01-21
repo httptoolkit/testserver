@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as tls from 'tls';
 import * as http2 from 'http2';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
@@ -136,6 +137,159 @@ accept-encoding: gzip, deflate
             const dataFrame = dataFrames[0];
             expect(dataFrame.stream_id).to.be.greaterThan(0);
             expect(dataFrame.payload_hex).to.equal(Buffer.from('Hello, HTTP/2!').toString('hex'));
+        });
+
+    });
+
+    describe("HTTP/1.1 pipelining", () => {
+
+        it("rejects pipelined echo request when it's the second request", async () => {
+            const host = `localhost:${serverPort}`;
+            const request1 = `GET /status/200 HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
+            const request2 = `GET /echo HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'http1.localhost',
+                rejectUnauthorized: false
+            });
+
+            await new Promise<void>((resolve) => socket.on('secureConnect', resolve));
+
+            // Send both requests at once (pipelined)
+            socket.write(request1 + request2);
+
+            const response = await new Promise<string>((resolve) => {
+                const chunks: Buffer[] = [];
+                socket.on('data', (chunk) => chunks.push(chunk));
+                socket.on('end', () => resolve(Buffer.concat(chunks).toString()));
+            });
+
+            socket.destroy();
+
+            // Parse the two responses (filter empty strings from split)
+            const responses = response.split(/(?=HTTP\/1\.1)/).filter(r => r.length > 0);
+            expect(responses.length).to.equal(2);
+
+            // First response should be 200 from /status/200
+            expect(responses[0]).to.include('HTTP/1.1 200');
+
+            // Second response (echo) should be 400 because pipelining is detected
+            const echoResponse = responses[1];
+            expect(echoResponse).to.include('HTTP/1.1 400');
+            expect(echoResponse).to.include('pipelining');
+        });
+
+        it("rejects pipelined echo request when it's the first request", async () => {
+            const host = `localhost:${serverPort}`;
+            const request1 = `GET /echo HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
+            const request2 = `GET /status/200 HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'http1.localhost',
+                rejectUnauthorized: false
+            });
+
+            await new Promise<void>((resolve) => socket.on('secureConnect', resolve));
+
+            // Send both requests at once (pipelined)
+            socket.write(request1 + request2);
+
+            const response = await new Promise<string>((resolve) => {
+                const chunks: Buffer[] = [];
+                socket.on('data', (chunk) => chunks.push(chunk));
+                socket.on('end', () => resolve(Buffer.concat(chunks).toString()));
+            });
+
+            socket.destroy();
+
+            // First response (echo) should be 400 because pipelining is detected
+            expect(response).to.include('HTTP/1.1 400');
+            expect(response).to.include('pipelining');
+        });
+
+        it("rejects both pipelined echo requests", async () => {
+            const host = `localhost:${serverPort}`;
+            const request1 = `GET /echo HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
+            const request2 = `GET /echo HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'http1.localhost',
+                rejectUnauthorized: false
+            });
+
+            await new Promise<void>((resolve) => socket.on('secureConnect', resolve));
+            socket.write(request1 + request2);
+
+            const response = await new Promise<string>((resolve) => {
+                const chunks: Buffer[] = [];
+                socket.on('data', (chunk) => chunks.push(chunk));
+                socket.on('end', () => resolve(Buffer.concat(chunks).toString()));
+            });
+
+            socket.destroy();
+
+            // Both echo requests should return 400 due to pipelining
+            const responses = response.split(/(?=HTTP\/1\.1)/).filter(r => r.length > 0);
+            expect(responses.length).to.equal(2);
+            expect(responses[0]).to.include('HTTP/1.1 400');
+            expect(responses[0]).to.include('pipelining');
+            expect(responses[1]).to.include('HTTP/1.1 400');
+            expect(responses[1]).to.include('pipelining');
+        });
+
+        it("works correctly with sequential requests on keep-alive connection", async () => {
+            const host = `localhost:${serverPort}`;
+
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'http1.localhost',
+                rejectUnauthorized: false
+            });
+
+            await new Promise<void>((resolve) => socket.on('secureConnect', resolve));
+
+            // Send first request and wait for response
+            const request1 = `GET /status/200 HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
+            socket.write(request1);
+
+            // Wait for first response
+            const response1 = await new Promise<string>((resolve) => {
+                let data = '';
+                const onData = (chunk: Buffer) => {
+                    data += chunk.toString();
+                    // Check if we have a complete response (ends with \r\n\r\n for no body)
+                    if (data.includes('\r\n\r\n')) {
+                        socket.removeListener('data', onData);
+                        resolve(data);
+                    }
+                };
+                socket.on('data', onData);
+            });
+
+            expect(response1).to.include('HTTP/1.1 200');
+
+            // Now send second request (echo)
+            const request2 = `GET /echo HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+            socket.write(request2);
+
+            const response2 = await new Promise<string>((resolve) => {
+                const chunks: Buffer[] = [];
+                socket.on('data', (chunk) => chunks.push(chunk));
+                socket.on('end', () => resolve(Buffer.concat(chunks).toString()));
+            });
+
+            socket.destroy();
+
+            // Echo should work and return the raw request
+            expect(response2).to.include('HTTP/1.1 200');
+            expect(response2).to.include('GET /echo HTTP/1.1');
         });
 
     });
