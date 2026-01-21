@@ -77,7 +77,9 @@ export const buildHttpBinAnythingEndpoint = (options: {
 
     const contentType = req.headers['content-type'];
 
-    const origin = req.socket.remoteAddress?.replace(/^::ffff:/, '') // Drop IPv6 wrapper of IPv4 addresses
+    // For HTTP/2 over wrapped streams, remoteAddress is on .stream (the underlying wrapper)
+    const origin = (req.socket.remoteAddress ?? (req.socket as any).stream?.remoteAddress)
+        ?.replace(/^::ffff:/, ''); // Drop IPv6 wrapper of IPv4 addresses
 
     let result: {} = {
         args: getUrlArgs(url),

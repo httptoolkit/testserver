@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as http2 from 'http2';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
@@ -45,6 +46,98 @@ accept-encoding: gzip, deflate
 
 `.replace(/\n/g, '\r\n')
         );
+    });
+
+    describe("HTTP/2", () => {
+
+        it("returns NDJSON with frame data for HTTP/2 requests", async () => {
+            const client = http2.connect(`http://localhost:${serverPort}`);
+
+            const req = client.request({
+                ':path': '/echo',
+                ':method': 'GET',
+                'test-header': 'test-value'
+            });
+
+            const [headers, body] = await new Promise<[http2.IncomingHttpHeaders, string]>((resolve, reject) => {
+                let headers: http2.IncomingHttpHeaders;
+                const chunks: Buffer[] = [];
+
+                req.on('response', (h) => { headers = h; });
+                req.on('data', (chunk) => chunks.push(chunk));
+                req.on('end', () => resolve([headers, Buffer.concat(chunks).toString()]));
+                req.on('error', reject);
+            });
+
+            client.close();
+
+            expect(headers[':status']).to.equal(200);
+            expect(headers['content-type']).to.equal('text/plain');
+
+            const lines = body.trim().split('\n');
+            const frames = lines.map(line => JSON.parse(line));
+
+            // Should have at least one SETTINGS frame (global) and HEADERS frame (stream)
+            const settingsFrames = frames.filter((f: any) => f.type === 'SETTINGS');
+            const headersFrames = frames.filter((f: any) => f.type === 'HEADERS');
+
+            expect(settingsFrames.length).to.be.greaterThan(0);
+            expect(headersFrames.length).to.be.greaterThan(0);
+
+            // Check SETTINGS frame structure
+            const settingsFrame = settingsFrames[0];
+            expect(settingsFrame.stream_id).to.equal(0);
+            expect(settingsFrame).to.have.property('flags');
+            expect(settingsFrame).to.have.property('length');
+            expect(settingsFrame).to.have.property('payload_hex');
+
+            // Check HEADERS frame has decoded headers
+            const headersFrame = headersFrames.find((f: any) => f.decoded_headers);
+            expect(headersFrame).to.exist;
+            expect(headersFrame.stream_id).to.be.greaterThan(0);
+            expect(headersFrame.decoded_headers).to.have.property(':path', '/echo');
+            expect(headersFrame.decoded_headers).to.have.property('test-header', 'test-value');
+        });
+
+        it("includes DATA frames for POST requests with body", async () => {
+            const client = http2.connect(`http://localhost:${serverPort}`);
+
+            const req = client.request({
+                ':path': '/echo',
+                ':method': 'POST',
+                'content-type': 'text/plain'
+            });
+
+            req.write('Hello, HTTP/2!');
+            req.end();
+
+            const [headers, body] = await new Promise<[http2.IncomingHttpHeaders, string]>((resolve, reject) => {
+                let headers: http2.IncomingHttpHeaders;
+                const chunks: Buffer[] = [];
+
+                req.on('response', (h) => { headers = h; });
+                req.on('data', (chunk) => chunks.push(chunk));
+                req.on('end', () => resolve([headers, Buffer.concat(chunks).toString()]));
+                req.on('error', reject);
+            });
+
+            client.close();
+
+            expect(headers[':status']).to.equal(200);
+
+            const lines = body.trim().split('\n');
+            const frames = lines.map(line => JSON.parse(line));
+
+            // Should have DATA frames
+            const dataFrames = frames.filter((f: any) => f.type === 'DATA');
+            expect(dataFrames.length).to.be.greaterThan(0);
+
+            // DATA frame should have payload
+            const dataFrame = dataFrames[0];
+            expect(dataFrame.stream_id).to.be.greaterThan(0);
+            expect(dataFrame.payload_hex).to.equal(Buffer.from('Hello, HTTP/2!').toString('hex'));
+        });
+
     });
 
 });

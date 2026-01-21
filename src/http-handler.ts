@@ -106,6 +106,18 @@ function createHttpRequestHandler(options: {
             endpoint.matchPath(path, hostnamePrefix)
         );
 
+        // For HTTP/2, stop data capturing for this stream unless the endpoint needs it
+        // This prevents unbounded buffering of large request bodies
+        if (req.httpVersion === '2.0' && (!matchingEndpoint || !matchingEndpoint.needsRawData)) {
+            const stream = (req as any).stream;
+            const session = stream?.session;
+            const capturingStream = session?.socket?.stream;
+            const streamId = stream?.id as number | undefined;
+            if (streamId !== undefined) {
+                capturingStream?.stopCapturingStream?.(streamId);
+            }
+        }
+
         if (matchingEndpoint) {
             console.log(`Request to ${path}${
                 hostnamePrefix
