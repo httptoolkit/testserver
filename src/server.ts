@@ -74,7 +74,13 @@ async function generateTlsConfig(options: ServerOptions) {
         ca: caCert.cert,
         generateCertificate: (domain: string, mode?: CertMode) => {
             if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
-            if (mode === 'expired') return ca.generateExpiredCertificate(domain);
+
+            if (mode === 'expired') {
+                // Try to get an actually-expired ACME cert; fall back to LocalCA if not expired yet
+                const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(rootDomain);
+                if (expiredAcmeCert) return expiredAcmeCert;
+                return ca.generateExpiredCertificate(domain);
+            }
 
             if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {
                 const cert = acmeCA.tryGetCertificateSync(domain);

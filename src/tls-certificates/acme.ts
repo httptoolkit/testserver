@@ -71,6 +71,54 @@ export class AcmeCA {
         return cachedCert;
     }
 
+    // Returns an ACME cert only if it has actually expired. Issues once, never renews.
+    // Returns undefined if no expired ACME cert is available (caller should use LocalCA fallback).
+    tryGetExpiredCertificateSync(domain: string) {
+        const cacheKey = `${domain}:expired`;
+        const cachedCert = this.certCache.getCert(cacheKey);
+
+        if (cachedCert) {
+            const isExpired = cachedCert.expiry <= Date.now();
+            console.log(`Found cached expired-mode cert for ${domain} (expiry: ${new Date(cachedCert.expiry).toISOString()}, actually expired: ${isExpired})`);
+
+            if (isExpired) {
+                return cachedCert;
+            }
+            // Not yet expired - caller should use LocalCA fallback
+            return undefined;
+        }
+
+        // No cached cert - issue one in the background (will be expired eventually)
+        const attemptId = Math.random().toString(16).slice(2);
+        console.log(`No expired-mode cert cached for ${domain}, issuing new one (${attemptId})`);
+        this.issueExpiredModeCertificate(domain, cacheKey, attemptId);
+
+        return undefined;
+    }
+
+    private async issueExpiredModeCertificate(domain: string, cacheKey: string, attemptId: string) {
+        if (this.pendingCertRenewals[cacheKey]) {
+            console.log(`Expired-mode cert already being issued for ${domain} (${attemptId})`);
+            return;
+        }
+
+        const refreshPromise = Object.assign(
+            this.requestNewCertificate(domain, { attemptId }).then((certData) => {
+                delete this.pendingCertRenewals[cacheKey];
+                this.certCache.cacheCert({ ...certData, domain: cacheKey });
+                console.log(`Expired-mode cert issued for ${domain} (${attemptId}), will expire: ${new Date(certData.expiry).toISOString()}`);
+                return certData;
+            }).catch((e) => {
+                delete this.pendingCertRenewals[cacheKey];
+                console.log(`Expired-mode cert generation failed for ${domain} (${attemptId}):`, e.message);
+                throw e;
+            }),
+            { id: attemptId }
+        );
+
+        this.pendingCertRenewals[cacheKey] = refreshPromise;
+    }
+
     private async getCertificate(
         domain: string,
         options: { forceRegenerate?: boolean, attemptId: string }
