@@ -3,8 +3,6 @@ import * as http from 'http';
 import * as http2 from 'http2';
 import { MaybePromise } from '@httptoolkit/util';
 
-import { clearArray } from './util.js';
-
 import { httpEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 
@@ -70,9 +68,7 @@ function createHttpRequestHandler(options: {
                 res.end('Unrecognized ACME challenge request');
             }
 
-            // We have to clear this, as we might get multiple requests on the same
-            // socket with keep-alive etc.
-            clearArray(req.socket.receivedData);
+            req.socket.receivedData = [];
             return;
         }
 
@@ -106,15 +102,19 @@ function createHttpRequestHandler(options: {
             endpoint.matchPath(path, hostnamePrefix)
         );
 
-        // For HTTP/2, stop data capturing for this stream unless the endpoint needs it
-        // This prevents unbounded buffering of large request bodies
-        if (req.httpVersion === '2.0' && (!matchingEndpoint || !matchingEndpoint.needsRawData)) {
-            const stream = (req as any).stream;
-            const session = stream?.session;
-            const capturingStream = session?.socket?.stream;
-            const streamId = stream?.id as number | undefined;
-            if (streamId !== undefined) {
-                capturingStream?.stopCapturingStream?.(streamId);
+        // Stop data capturing unless the endpoint needs it
+        if (!matchingEndpoint || !matchingEndpoint.needsRawData) {
+            if (req.httpVersion === '2.0') {
+                const stream = (req as any).stream;
+                const session = stream?.session;
+                const capturingStream = session?.socket?.stream;
+                const streamId = stream?.id as number | undefined;
+                if (streamId !== undefined) {
+                    capturingStream?.stopCapturingStream?.(streamId);
+                }
+            } else {
+                // HTTP/1: stop capturing and clear buffer
+                req.socket.receivedData = undefined;
             }
         }
 
@@ -157,9 +157,8 @@ export function createHttp1Handler(options: {
                 res.end('HTTP handler failed');
             }
         } finally {
-            // We have to clear this, as we might get multiple requests on the same
-            // socket with keep-alive etc.
-            clearArray(req.socket.receivedData);
+            // Reset for next request on keep-alive connections
+            req.socket.receivedData = [];
         }
     });
 
@@ -186,10 +185,6 @@ export function createHttp2Handler(options: {
                 res.writeHead(500);
                 res.end('HTTP handler failed');
             }
-        } finally {
-            // We have to clear this, as we might get multiple requests on the same
-            // socket with keep-alive etc.
-            clearArray(req.socket.receivedData);
         }
     });
 
