@@ -253,4 +253,60 @@ export class LocalCA {
 
         return generatedCertificate;
     }
+
+    generateSelfSignedCertificate(domain: string) {
+        const cacheKey = `${domain}:self-signed`;
+
+        const cachedCert = this.certInMemoryCache[cacheKey];
+        if (cachedCert) return cachedCert;
+
+        const cert = pki.createCertificate();
+
+        cert.publicKey = KEY_PAIR!.publicKey;
+        cert.serialNumber = generateSerialNumber();
+
+        cert.validity.notBefore = new Date();
+        cert.validity.notBefore.setDate(cert.validity.notBefore.getDate() - 1);
+
+        cert.validity.notAfter = new Date();
+        cert.validity.notAfter.setFullYear(cert.validity.notAfter.getFullYear() + 1);
+
+        const subject = [
+            { name: 'commonName', value: domain },
+            { name: 'countryName', value: this.options?.countryName ?? 'XX' },
+            { name: 'localityName', value: this.options?.localityName ?? 'Unknown' },
+            { name: 'organizationName', value: this.options?.organizationName ?? 'Testserver Test Cert' }
+        ];
+
+        cert.setSubject(subject);
+        cert.setIssuer(subject); // Self-signed: issuer = subject
+
+        cert.setExtensions([
+            { name: 'basicConstraints', cA: false, critical: true },
+            { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, critical: true },
+            { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
+            {
+                name: 'subjectAltName',
+                altNames: [{ type: 2, value: domain }]
+            },
+            { name: 'subjectKeyIdentifier' }
+        ]);
+
+        cert.sign(KEY_PAIR!.privateKey, md.sha256.create()); // Self-signed: sign with own key
+
+        const certPem = pki.certificateToPem(cert);
+        const generatedCertificate = {
+            key: pki.privateKeyToPem(KEY_PAIR!.privateKey),
+            cert: certPem,
+            ca: certPem // Self-signed: cert is its own CA
+        };
+
+        this.certInMemoryCache[cacheKey] = generatedCertificate;
+
+        setTimeout(() => {
+            delete this.certInMemoryCache[cacheKey];
+        }, 1000 * 60 * 60 * 24).unref();
+
+        return generatedCertificate;
+    }
 }

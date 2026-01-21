@@ -2,10 +2,13 @@ import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
 
-export const CERT_MODES = ['wrong-host'] as const;
+export const CERT_MODES = ['wrong-host', 'self-signed'] as const;
 export type CertMode = typeof CERT_MODES[number];
 
-export type CertGenerator = (domain: string) => {
+// Modes that require special certificate generation (vs just domain remapping)
+const CERT_GENERATION_MODES = new Set<CertMode>(['self-signed']);
+
+export type CertGenerator = (domain: string, mode?: CertMode) => {
     key: string,
     cert: string,
     ca?: string
@@ -117,8 +120,10 @@ export async function createTlsHandler(
                 certDomain = `example.${tlsConfig.rootDomain}`;
             }
 
+            const generationMode = certModeParts.find(mode => CERT_GENERATION_MODES.has(mode));
+
             try {
-                const generatedCert = tlsConfig.generateCertificate(certDomain);
+                const generatedCert = tlsConfig.generateCertificate(certDomain, generationMode);
                 cb(null, tls.createSecureContext({
                     key: generatedCert.key,
                     cert: generatedCert.cert,

@@ -194,4 +194,44 @@ Connection: keep-alive
 
     });
 
+    describe("self-signed certificates", () => {
+
+        it("returns a self-signed certificate where issuer equals subject", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'self-signed.localhost',
+                rejectUnauthorized: false
+            });
+
+            const cert = await new Promise<tls.PeerCertificate>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve(conn.getPeerCertificate()));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal('self-signed.localhost');
+            expect(cert.issuer.CN).to.equal('self-signed.localhost');
+            expect(cert.subject.O).to.equal(cert.issuer.O);
+        });
+
+        it("can combine self-signed with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2.self-signed.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal(cert.issuer.CN);
+            expect(protocol).to.equal('h2');
+        });
+
+    });
+
 });

@@ -1,7 +1,7 @@
 import * as net from 'net';
 
 import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
-import { createTlsHandler } from './tls-handler.js';
+import { createTlsHandler, CertMode } from './tls-handler.js';
 import { ConnectionProcessor } from './process-connection.js';
 
 import { AcmeCA, AcmeProvider, ExternalAccessBindingConfig } from './tls-certificates/acme.js';
@@ -45,7 +45,12 @@ async function generateTlsConfig(options: ServerOptions) {
             key: defaultCert.key,
             cert: defaultCert.cert,
             ca: caCert.cert,
-            generateCertificate: (domain: string) => ca.generateCertificate(domain),
+            generateCertificate: (domain: string, mode?: CertMode) => {
+                if (mode === 'self-signed') {
+                    return ca.generateSelfSignedCertificate(domain);
+                }
+                return ca.generateCertificate(domain);
+            },
             acmeChallenge: () => undefined // Not supported
         };
     }
@@ -68,7 +73,11 @@ async function generateTlsConfig(options: ServerOptions) {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
-        generateCertificate: (domain: string) => {
+        generateCertificate: (domain: string, mode?: CertMode) => {
+            if (mode === 'self-signed') {
+                return ca.generateSelfSignedCertificate(domain);
+            }
+
             if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {
                 const cert = acmeCA.tryGetCertificateSync(domain);
                 if (cert) return cert;
