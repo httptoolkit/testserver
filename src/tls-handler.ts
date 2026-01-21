@@ -2,7 +2,10 @@ import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
 
-type CertGenerator = (domain: string) => {
+export const CERT_MODES = ['wrong-host'] as const;
+export type CertMode = typeof CERT_MODES[number];
+
+export type CertGenerator = (domain: string) => {
     key: string,
     cert: string,
     ca?: string
@@ -33,10 +36,13 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
     return serverNamePrefix.split('.');
 };
 
+const CERT_MODE_SET = new Set<string>(CERT_MODES);
+
 const VALID_SNI_PARTS = new Set([
     ...Object.keys(SNI_PROTOCOL_FILTERS),
     'no-tls',
-    'example'
+    'example',
+    ...CERT_MODES
 ]);
 
 const MAX_SNI_PARTS = 3;
@@ -92,13 +98,27 @@ export async function createTlsHandler(
                 return cb(new Error(`Invalid SNI part in '${domain}'`), null);
             }
 
+            const uniqueParts = new Set(serverNameParts);
+            if (uniqueParts.size !== serverNameParts.length) {
+                return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
+            }
+
             if (serverNameParts.includes('no-tls')) {
-                // This closes the unwanted TLS connection without response
                 return cb(new Error('Intentionally rejecting TLS connection'), null);
             }
 
+            const certModeParts = serverNameParts.filter(part => CERT_MODE_SET.has(part)) as CertMode[];
+            if (certModeParts.length > 1) {
+                return cb(new Error(`Multiple cert modes not yet supported: ${certModeParts.join(', ')}`), null);
+            }
+
+            let certDomain = domain;
+            if (certModeParts.includes('wrong-host')) {
+                certDomain = `example.${tlsConfig.rootDomain}`;
+            }
+
             try {
-                const generatedCert = tlsConfig.generateCertificate(domain);
+                const generatedCert = tlsConfig.generateCertificate(certDomain);
                 cb(null, tls.createSecureContext({
                     key: generatedCert.key,
                     cert: generatedCert.cert,

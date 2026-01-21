@@ -139,5 +139,59 @@ Connection: keep-alive
         }));
     });
 
+    it("rejects duplicate SNI parts", async () => {
+        const conn = tls.connect({
+            port: serverPort,
+            servername: 'http2.http2.localhost',
+            rejectUnauthorized: false
+        });
+
+        const result = await new Promise<string>((resolve) => {
+            conn.on('secureConnect', () => resolve('Connected'));
+            conn.on('error', () => resolve('Connection rejected'));
+        });
+        conn.destroy();
+
+        expect(result).to.equal('Connection rejected');
+    });
+
+    describe("wrong-host certificates", () => {
+
+        it("returns a certificate for example.localhost when connecting to wrong-host.*", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'wrong-host.localhost',
+                rejectUnauthorized: false
+            });
+
+            const cert = await new Promise<tls.PeerCertificate>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve(conn.getPeerCertificate()));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal('example.localhost');
+            expect(cert.subjectaltname).to.equal('DNS:example.localhost');
+        });
+
+        it("can combine wrong-host with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2.wrong-host.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal('example.localhost');
+            expect(protocol).to.equal('h2');
+        });
+
+    });
 
 });

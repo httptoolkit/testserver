@@ -246,8 +246,7 @@ export class LocalCA {
         // We cache in memory only - no need to persist these (unlike ACME etc)
         this.certInMemoryCache[domain] = generatedCertificate;
 
-        // Make sure this gets regenerated in 24 hours, in case this
-        // server is running persistently:
+        // Make sure this gets regenerated in 24 hours, in case this server is running persistently
         setTimeout(() => {
             delete this.certInMemoryCache[domain];
         }, 1000 * 60 * 60 * 24).unref();

@@ -68,15 +68,15 @@ async function generateTlsConfig(options: ServerOptions) {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
-        generateCertificate: (certDomain: string) => {
-            if (certDomain === rootDomain || certDomain.endsWith('.' + rootDomain)) {
-                const cert = acmeCA.tryGetCertificateSync(certDomain);
+        generateCertificate: (domain: string) => {
+            if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {
+                const cert = acmeCA.tryGetCertificateSync(domain);
                 if (cert) return cert;
             }
 
             // If you use some other domain or the cert isn't immediately available, we fall back
             // to self-signed certs for now:
-            return ca.generateCertificate(certDomain);
+            return ca.generateCertificate(domain);
         },
         acmeChallenge: (token: string) => acmeCA.getChallengeResponse(token)
     }
