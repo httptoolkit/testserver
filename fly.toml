@@ -14,8 +14,8 @@ primary_region = 'cdg'
   ROOT_DOMAIN = 'testserver.host'
   PROACTIVE_CERT_DOMAINS = 'testserver.host,example.testserver.host,http1.testserver.host,http2.testserver.host'
 
-  ACME_PROVIDER = 'zerossl' # or 'letsencrypt'
-  # For zerossl you'll need to set ACME_EAB_HMAC and ACME_EAB_KID secrets for auth
+  ACME_PROVIDER = 'google' # or 'letsencrypt', 'zerossl'
+  # For google/zerossl you'll need to set ACME_EAB_HMAC and ACME_EAB_KID secrets for auth
 
 [[services]]
   protocol = "tcp"

@@ -14,7 +14,11 @@ interface AcmeGeneratedCertificate {
     expiry: number;
 }
 
-const SUPPORTED_ACME_PROVIDERS = ['letsencrypt', 'zerossl'] as const;
+const SUPPORTED_ACME_PROVIDERS = [
+    'letsencrypt',
+    'zerossl',
+    'google'
+] as const;
 
 export type AcmeProvider = typeof SUPPORTED_ACME_PROVIDERS[number];
 
