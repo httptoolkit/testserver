@@ -270,6 +270,7 @@ export class AcmeCA {
             csr,
             challengePriority: ['http-01'],
             termsOfServiceAgreed: true,
+            email: 'contact@' + domain,
             skipChallengeVerification: true,
             challengeCreateFn: async (_authz, challenge, keyAuth) => {
                 if (challenge.type !== 'http-01') {
