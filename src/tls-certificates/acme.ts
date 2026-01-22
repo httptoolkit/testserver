@@ -51,12 +51,16 @@ export class AcmeCA {
     );
 
     async getChallengeResponse(token: string) {
-        return (await this.acmeClient).getChallengeKeyAuthorization({
+        const challengeResponse = (await this.acmeClient).getChallengeKeyAuthorization({
             token,
             type: 'http-01',
             url: '',
             status: 'pending'
         });
+
+        console.log(`Challenge response for ${token} is ${challengeResponse}`);
+
+        return challengeResponse;
     }
 
     tryGetCertificateSync(domain: string) {
