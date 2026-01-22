@@ -38,8 +38,8 @@ async function generateTlsConfig(options: ServerOptions) {
         certCache ? certCache.loadCache() : null
     ]);
 
-    const ca = new LocalCA(caCert, certCache);
-    const defaultCert = ca.generateCertificate(rootDomain);
+    const ca = await LocalCA.create(caCert);
+    const defaultCert = await ca.generateCertificate(rootDomain);
 
     if (!options.acmeProvider) {
         console.log('Using self signed certificates');
@@ -48,11 +48,11 @@ async function generateTlsConfig(options: ServerOptions) {
             key: defaultCert.key,
             cert: defaultCert.cert,
             ca: caCert.cert,
-            generateCertificate: (domain: string, mode?: CertMode) => {
-                if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
-                if (mode === 'expired') return ca.generateExpiredCertificate(domain);
+            generateCertificate: async (domain: string, mode?: CertMode) => {
+                if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
+                if (mode === 'expired') return await ca.generateExpiredCertificate(domain);
                 // 'revoked' mode requires ACME - falls through to normal cert without it
-                return ca.generateCertificate(domain);
+                return await ca.generateCertificate(domain);
             },
             acmeChallenge: () => undefined // Not supported
         };
@@ -76,14 +76,14 @@ async function generateTlsConfig(options: ServerOptions) {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
-        generateCertificate: (domain: string, mode?: CertMode) => {
-            if (mode === 'self-signed') return ca.generateSelfSignedCertificate(domain);
+        generateCertificate: async (domain: string, mode?: CertMode) => {
+            if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
 
             if (mode === 'expired') {
                 // Try to get an actually-expired ACME cert; fall back to LocalCA if not expired yet
                 const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(rootDomain);
                 if (expiredAcmeCert) return expiredAcmeCert;
-                return ca.generateExpiredCertificate(domain);
+                return await ca.generateExpiredCertificate(domain);
             }
 
             if (mode === 'revoked') {
@@ -100,7 +100,7 @@ async function generateTlsConfig(options: ServerOptions) {
 
             // If you use some other domain or the cert isn't immediately available, we fall back
             // to self-signed certs for now:
-            return ca.generateCertificate(domain);
+            return await ca.generateCertificate(domain);
         },
         acmeChallenge: (token: string) => acmeCA.getChallengeResponse(token)
     }

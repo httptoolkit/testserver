@@ -8,11 +8,11 @@ export type CertMode = typeof CERT_MODES[number];
 // Modes that require special certificate generation (vs just domain remapping)
 const CERT_GENERATION_MODES = new Set<CertMode>(['self-signed', 'expired', 'revoked']);
 
-export type CertGenerator = (domain: string, mode?: CertMode) => {
+export type CertGenerator = (domain: string, mode?: CertMode) => Promise<{
     key: string,
     cert: string,
     ca?: string
-};
+}>;
 
 interface TlsHandlerConfig {
     rootDomain: string;
@@ -55,11 +55,11 @@ const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert che
 function proactivelyRefreshDomains(domains: string[], certGenerator: CertGenerator) {
     domains.forEach(domain => {
         console.log(`Proactively checking cert at startup for ${domain}`);
-        certGenerator(domain);
+        certGenerator(domain).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
 
         setInterval(() => {
             console.log(`Proactively checking cert for ${domain}`);
-            certGenerator(domain);
+            certGenerator(domain).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
         }, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
     });
 }
@@ -90,40 +90,40 @@ export async function createTlsHandler(
             // we accept a preference order in our SNI as well e.g. http2.http1.*.
             return serverProtocols.find(protocol => clientProtocols.includes(protocol));
         },
-        SNICallback: (domain: string, cb: Function) => {
-            const serverNameParts = getSNIPrefixParts(domain, tlsConfig.rootDomain);
-
-            if (serverNameParts.length > MAX_SNI_PARTS) {
-                return cb(new Error(`Too many SNI parts (${serverNameParts.length})`), null);
-            }
-
-            if (serverNameParts.some(part => !VALID_SNI_PARTS.has(part))) {
-                return cb(new Error(`Invalid SNI part in '${domain}'`), null);
-            }
-
-            const uniqueParts = new Set(serverNameParts);
-            if (uniqueParts.size !== serverNameParts.length) {
-                return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
-            }
-
-            if (serverNameParts.includes('no-tls')) {
-                return cb(new Error('Intentionally rejecting TLS connection'), null);
-            }
-
-            const certModeParts = serverNameParts.filter(part => CERT_MODE_SET.has(part)) as CertMode[];
-            if (certModeParts.length > 1) {
-                return cb(new Error(`Multiple cert modes not yet supported: ${certModeParts.join(', ')}`), null);
-            }
-
-            let certDomain = domain;
-            if (certModeParts.includes('wrong-host')) {
-                certDomain = `example.${tlsConfig.rootDomain}`;
-            }
-
-            const generationMode = certModeParts.find(mode => CERT_GENERATION_MODES.has(mode));
-
+        SNICallback: async (domain: string, cb: Function) => {
             try {
-                const generatedCert = tlsConfig.generateCertificate(certDomain, generationMode);
+                const serverNameParts = getSNIPrefixParts(domain, tlsConfig.rootDomain);
+
+                if (serverNameParts.length > MAX_SNI_PARTS) {
+                    return cb(new Error(`Too many SNI parts (${serverNameParts.length})`), null);
+                }
+
+                if (serverNameParts.some(part => !VALID_SNI_PARTS.has(part))) {
+                    return cb(new Error(`Invalid SNI part in '${domain}'`), null);
+                }
+
+                const uniqueParts = new Set(serverNameParts);
+                if (uniqueParts.size !== serverNameParts.length) {
+                    return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
+                }
+
+                if (serverNameParts.includes('no-tls')) {
+                    return cb(new Error('Intentionally rejecting TLS connection'), null);
+                }
+
+                const certModeParts = serverNameParts.filter(part => CERT_MODE_SET.has(part)) as CertMode[];
+                if (certModeParts.length > 1) {
+                    return cb(new Error(`Multiple cert modes not yet supported: ${certModeParts.join(', ')}`), null);
+                }
+
+                let certDomain = domain;
+                if (certModeParts.includes('wrong-host')) {
+                    certDomain = `example.${tlsConfig.rootDomain}`;
+                }
+
+                const generationMode = certModeParts.find(mode => CERT_GENERATION_MODES.has(mode));
+
+                const generatedCert = await tlsConfig.generateCertificate(certDomain, generationMode);
                 cb(null, tls.createSecureContext({
                     key: generatedCert.key,
                     cert: generatedCert.cert,
