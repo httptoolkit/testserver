@@ -138,6 +138,14 @@ export async function createTlsHandler(
 
     proactivelyRefreshDomains(tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
 
+    // Copy TLS fingerprint from underlying socket to TLS socket
+    server.prependListener('secureConnection', (tlsSocket) => {
+        const parent = (tlsSocket as any)._parent;
+        if (parent?.tlsClientHello) {
+            (tlsSocket as any).tlsClientHello = parent.tlsClientHello;
+        }
+    });
+
     server.on('secureConnection', (socket) => {
         connProcessor.processConnection(socket);
     });

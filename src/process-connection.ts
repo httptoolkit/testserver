@@ -243,14 +243,6 @@ export class ConnectionProcessor {
 
         if (isTLS(initialData)) {
             connection.unshift(initialData);
-            // For TLS, set up data capturing on the raw connection
-            connection.receivedData = [];
-            connection.once('readable', () => {
-                connection.on('data', (data) => {
-                    connection.receivedData?.push(data);
-                });
-            });
-            connection.pause();
             this.tlsHandler(connection);
         } else if (isHTTP2(initialData)) {
             // For HTTP/2, wrap in a capturing stream because http2 module

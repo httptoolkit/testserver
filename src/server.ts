@@ -1,5 +1,12 @@
 import * as net from 'net';
 
+import {
+    readTlsClientHello,
+    calculateJa3FromFingerprintData,
+    calculateJa4FromHelloData,
+    TlsHelloData
+} from 'read-tls-client-hello';
+
 import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
 import { createTlsHandler, CertMode } from './tls-handler.js';
 import { ConnectionProcessor } from './process-connection.js';
@@ -14,6 +21,11 @@ declare module 'stream' {
         // Pipelining detection: tracks concurrent requests
         requestsInBatch?: number;
         pipelining?: boolean;
+        // TLS fingerprint data (set for TLS connections)
+        tlsClientHello?: TlsHelloData & {
+            ja3: string;
+            ja4: string;
+        };
     }
 }
 
@@ -108,7 +120,18 @@ async function generateTlsConfig(options: ServerOptions) {
 
 const createTcpHandler = async (options: ServerOptions = {}) => {
     const connProcessor = new ConnectionProcessor(
-        (conn) => {
+        async (conn) => {
+            // Read and store TLS fingerprint before TLS handshake
+            try {
+                const helloData = await readTlsClientHello(conn);
+                conn.tlsClientHello = {
+                    ...helloData,
+                    ja3: calculateJa3FromFingerprintData(helloData.fingerprintData),
+                    ja4: calculateJa4FromHelloData(helloData)
+                };
+            } catch (e) {
+                // Non-TLS traffic or malformed client hello - continue without fingerprint
+            }
             conn.pause();
             tlsHandler.emit('connection', conn);
         },

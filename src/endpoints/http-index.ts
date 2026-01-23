@@ -45,3 +45,4 @@ export * from './http/encoding/deflate.js';
 export * from './http/encoding/zstd.js';
 export * from './http/encoding/brotli.js';
 export * from './http/encoding/identity.js';
+export * from './http/tls-fingerprint.js';
