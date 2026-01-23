@@ -60,10 +60,11 @@ async function generateTlsConfig(options: ServerOptions) {
             key: defaultCert.key,
             cert: defaultCert.cert,
             ca: caCert.cert,
+            localCA: ca,
             generateCertificate: async (domain: string, mode?: CertMode) => {
                 if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
                 if (mode === 'expired') return await ca.generateExpiredCertificate(domain);
-                // 'revoked' mode requires ACME - falls through to normal cert without it
+                if (mode === 'revoked') return await ca.generateRevokedCertificate(domain);
                 return await ca.generateCertificate(domain);
             },
             acmeChallenge: () => undefined // Not supported
@@ -88,6 +89,7 @@ async function generateTlsConfig(options: ServerOptions) {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
+        localCA: ca,
         generateCertificate: async (domain: string, mode?: CertMode) => {
             if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
 
@@ -99,10 +101,10 @@ async function generateTlsConfig(options: ServerOptions) {
             }
 
             if (mode === 'revoked') {
-                // Try to get a revoked ACME cert; fall back to normal cert if not yet available
+                // Try to get a revoked ACME cert; fall back to LocalCA revoked cert
                 const revokedAcmeCert = acmeCA.tryGetRevokedCertificateSync(rootDomain);
                 if (revokedAcmeCert) return revokedAcmeCert;
-                // No LocalCA fallback for revoked - just use normal cert until ACME one is ready
+                return await ca.generateRevokedCertificate(domain);
             }
 
             if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {

@@ -1,6 +1,7 @@
 import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
+import { LocalCA } from './tls-certificates/local-ca.js';
 
 export const CERT_MODES = ['wrong-host', 'self-signed', 'expired', 'revoked'] as const;
 export type CertMode = typeof CERT_MODES[number];
@@ -22,6 +23,7 @@ interface TlsHandlerConfig {
     cert: string;
     ca: string;
     generateCertificate: CertGenerator;
+    localCA?: LocalCA;
 }
 
 const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
@@ -145,6 +147,24 @@ export async function createTlsHandler(
             (tlsSocket as any).tlsClientHello = parent.tlsClientHello;
         }
     });
+    
+    // Handle OCSP stapling requests
+    if (tlsConfig.localCA) {
+        server.on('OCSPRequest', async (cert, issuer, callback) => {
+            try {
+                const ocspResponse = await tlsConfig.localCA!.getOcspResponse(cert);
+                if (ocspResponse) {
+                    callback(null, ocspResponse);
+                } else {
+                    // No OCSP response available - don't staple anything
+                    callback(null, Buffer.alloc(0));
+                }
+            } catch (e) {
+                console.error('OCSP response generation error', e);
+                callback(null, Buffer.alloc(0));
+            }
+        });
+    }
 
     server.on('secureConnection', (socket) => {
         connProcessor.processConnection(socket);

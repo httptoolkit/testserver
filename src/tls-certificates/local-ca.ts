@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import { createOcspResponse } from './ocsp.js';
 
 import * as x509 from '@peculiar/x509';
 import * as asn1X509 from '@peculiar/asn1-x509';
@@ -145,9 +146,23 @@ export async function generateCACertificate(options: {
 
 // Generates a unique serial number for a certificate as a hex string:
 function generateSerialNumber() {
-    return 'A' + crypto.randomUUID().replace(/-/g, '');
-    // We add a leading 'A' to ensure it's always positive (not 'F') and always
-    // valid (e.g. leading 000 is bad padding, and would be unparseable).
+    // Use digit prefix (0-7) to ensure high bit is clear (naturally positive per RFC 5280).
+    // Prefixes 0-7 have MSB=0: e.g. '1' = 0001, so '1x...' is naturally positive.
+    return '1' + crypto.randomUUID().replace(/-/g, '');
+}
+
+// Check if a certificate's domain indicates it should be treated as revoked
+function isRevokedCert(cert: x509.X509Certificate): boolean {
+    const sanExt = cert.getExtension(x509.SubjectAlternativeNameExtension);
+    if (!sanExt) return false;
+
+    for (const name of sanExt.names.items) {
+        if (name.type === 'dns') {
+            const parts = (name.value as string).split('.');
+            if (parts.includes('revoked')) return true;
+        }
+    }
+    return false;
 }
 
 // We share a single keypair across all certificates in this process, and
@@ -246,6 +261,41 @@ export class LocalCA {
 
     async generateExpiredCertificate(domain: string): Promise<LocallyGeneratedCertificate> {
         return this.generateCert(domain, `${domain}:expired`, { expired: true });
+    }
+
+    async generateRevokedCertificate(domain: string): Promise<LocallyGeneratedCertificate> {
+        return this.generateCert(domain, `${domain}:revoked`);
+    }
+
+    async getOcspResponse(certDer: Buffer): Promise<Buffer | null> {
+        // Parse the certificate to get its serial number
+        const certPem = `-----BEGIN CERTIFICATE-----\n${certDer.toString('base64')}\n-----END CERTIFICATE-----`;
+        let cert: x509.X509Certificate;
+        try {
+            cert = new x509.X509Certificate(certPem);
+        } catch {
+            return null;
+        }
+
+        if (isRevokedCert(cert)) {
+            // Certificate is revoked - return revoked OCSP response
+            return await createOcspResponse({
+                cert,
+                issuerCert: this.caCert,
+                issuerKey: this.caKey,
+                status: 'revoked',
+                revocationTime: new Date(), // Use current time as approximation
+                revocationReason: 1 // keyCompromise
+            });
+        }
+
+        // Certificate not revoked - return good status
+        return await createOcspResponse({
+            cert,
+            issuerCert: this.caCert,
+            issuerKey: this.caKey,
+            status: 'good'
+        });
     }
 
     private async generateCert(
