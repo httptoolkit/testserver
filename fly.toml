@@ -15,7 +15,7 @@ primary_region = 'cdg'
   PROACTIVE_CERT_DOMAINS = 'testserver.host,example.testserver.host,http1.testserver.host,http2.testserver.host'
 
   ACME_PROVIDER = 'google' # or 'letsencrypt', 'zerossl'
-  # For google/zerossl you'll need to set ACME_EAB_HMAC and ACME_EAB_KID secrets for auth
+  # Set ACME_ACCOUNT_KEY secret (PEM format) - see src/tls-certificates/acme.ts for details
 
 [[services]]
   protocol = "tcp"

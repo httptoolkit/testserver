@@ -22,36 +22,30 @@ const SUPPORTED_ACME_PROVIDERS = [
 
 export type AcmeProvider = typeof SUPPORTED_ACME_PROVIDERS[number];
 
-export interface ExternalAccessBindingConfig {
-    kid: string;
-    hmacKey: string;
-}
-
 export class AcmeCA {
+
+    private readonly acmeClient: ACME.Client;
 
     constructor(
         private certCache: PersistentCertCache,
         private acmeProvider: AcmeProvider,
-        private eabConfig: ExternalAccessBindingConfig | undefined
+        accountKey: string
     ) {
         if (!SUPPORTED_ACME_PROVIDERS.includes(acmeProvider)) {
             throw new Error(`Unsupported ACME provider: ${acmeProvider}`);
         }
+
+        this.acmeClient = new ACME.Client({
+            directoryUrl: ACME.directory[this.acmeProvider].production,
+            accountKey
+        });
     }
 
     private pendingAcmeChallenges: { [token: string]: string | undefined } = {}
     private pendingCertRenewals: { [domain: string]: (Promise<AcmeGeneratedCertificate> & { id: string }) | undefined } = {};
 
-    private readonly acmeClient = ACME.crypto.createPrivateKey().then(
-        (accountKey) => new ACME.Client({
-            directoryUrl: ACME.directory[this.acmeProvider].production,
-            accountKey,
-            externalAccountBinding: this.eabConfig
-        })
-    );
-
-    async getChallengeResponse(token: string) {
-        const challengeResponse = (await this.acmeClient).getChallengeKeyAuthorization({
+    getChallengeResponse(token: string) {
+        const challengeResponse = this.acmeClient.getChallengeKeyAuthorization({
             token,
             type: 'http-01',
             url: '',
@@ -127,7 +121,7 @@ export class AcmeCA {
         const certData = await this.requestNewCertificate(domain, options);
 
         console.log(`Revoking certificate for ${domain} (${options.attemptId})`);
-        await (await this.acmeClient).revokeCertificate(certData.cert);
+        await this.acmeClient.revokeCertificate(certData.cert);
         console.log(`Certificate revoked for ${domain} (${options.attemptId})`);
 
         return certData;
@@ -270,7 +264,7 @@ export class AcmeCA {
             commonName: domain
         });
 
-        const cert = await (await this.acmeClient).auto({
+        const cert = await this.acmeClient.auto({
             csr,
             challengePriority: ['http-01'],
             termsOfServiceAgreed: true,
