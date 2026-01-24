@@ -98,14 +98,14 @@ async function generateTlsConfig(options: ServerOptions) {
 
             if (mode === 'expired') {
                 // Try to get an actually-expired ACME cert; fall back to LocalCA if not expired yet
-                const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(rootDomain);
+                const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(domain);
                 if (expiredAcmeCert) return expiredAcmeCert;
                 return await ca.generateExpiredCertificate(domain);
             }
 
             if (mode === 'revoked') {
                 // Try to get a revoked ACME cert; fall back to LocalCA revoked cert
-                const revokedAcmeCert = acmeCA.tryGetRevokedCertificateSync(rootDomain);
+                const revokedAcmeCert = acmeCA.tryGetRevokedCertificateSync(domain);
                 if (revokedAcmeCert) return revokedAcmeCert;
                 return await ca.generateRevokedCertificate(domain);
             }
