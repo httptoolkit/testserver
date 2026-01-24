@@ -41,7 +41,6 @@ export class AcmeCA {
         });
     }
 
-    private pendingAcmeChallenges: { [token: string]: string | undefined } = {}
     private pendingCertRenewals: { [domain: string]: (Promise<AcmeGeneratedCertificate> & { id: string }) | undefined } = {};
 
     getChallengeResponse(token: string) {
@@ -158,8 +157,13 @@ export class AcmeCA {
             return;
         }
 
+        // Only Google Trust Services supports short-lived certificates
+        const requestCert = this.acmeProvider === 'google'
+            ? this.requestShortLivedCertificate(domain, { attemptId })
+            : this.requestNewCertificate(domain, { attemptId });
+
         const refreshPromise = Object.assign(
-            this.requestNewCertificate(domain, { attemptId }).then((certData) => {
+            requestCert.then((certData) => {
                 delete this.pendingCertRenewals[cacheKey];
                 this.certCache.cacheCert({ ...certData, domain: cacheKey });
                 console.log(`Expired-mode cert issued for ${domain} (${attemptId}), will expire: ${new Date(certData.expiry).toISOString()}`);
@@ -270,33 +274,79 @@ export class AcmeCA {
             termsOfServiceAgreed: true,
             email: 'contact@' + domain,
             skipChallengeVerification: true,
-            challengeCreateFn: async (_authz, challenge, keyAuth) => {
-                if (challenge.type !== 'http-01') {
-                    throw new Error(`Unexpected ${challenge.type} challenge (${options.attemptId})`);
-                }
-
-                console.log(`Preparing for ${challenge.type} ACME challenge ${challenge.token} (${options.attemptId})`);
-
-                this.pendingAcmeChallenges[challenge.token] = keyAuth;
+            challengeCreateFn: async () => {
+                // Challenge responses are stateless - getChallengeResponse() computes
+                // the key authorization directly from the token
             },
-            challengeRemoveFn: async (_authz, challenge) => {
-                if (challenge.type !== 'http-01') {
-                    throw new Error(`Unexpected ${challenge.type} challenge (${options.attemptId})`);
-                }
-
-                console.log(`Removing ACME ${
-                    challenge.status
-                } ${
-                    challenge.type
-                } challenge ${
-                    JSON.stringify(challenge)
-                }) (${options.attemptId})`);
-
-                delete this.pendingAcmeChallenges[challenge.token];
-            }
+            challengeRemoveFn: async () => {}
         });
 
         console.log(`Successfully ACMEd new certificate for ${domain} (${options.attemptId})`);
+
+        return {
+            key: key.toString(),
+            cert,
+            expiry: (new Date(ACME.crypto.readCertificateInfo(cert).notAfter)).valueOf()
+        };
+    }
+
+    /**
+     * Request a short-lived certificate (1 day validity) using the lower-level ACME API.
+     * Google Trust Services supports validity periods as short as 1 day.
+     */
+    private async requestShortLivedCertificate(domain: string, options: { attemptId: string }): Promise<AcmeGeneratedCertificate> {
+        console.log(`Requesting short-lived certificate for ${domain} (${options.attemptId})`);
+
+        const [key, csr] = await ACME.crypto.createCsr({
+            commonName: domain
+        });
+
+        // Ensure account exists
+        await this.acmeClient.createAccount({
+            termsOfServiceAgreed: true,
+            contact: [`mailto:contact@${domain}`]
+        });
+
+        // Create order with 1-day validity
+        const notBefore = new Date();
+        const notAfter = new Date(Date.now() + ONE_DAY);
+
+        console.log(`Creating order with validity: ${notBefore.toISOString()} to ${notAfter.toISOString()} (${options.attemptId})`);
+
+        const order = await this.acmeClient.createOrder({
+            identifiers: [{ type: 'dns', value: domain }],
+            notBefore: notBefore.toISOString(),
+            notAfter: notAfter.toISOString()
+        });
+
+        // Get and complete authorizations
+        const authorizations = await this.acmeClient.getAuthorizations(order);
+        console.log(`Got ${authorizations.length} authorizations for ${domain} (${options.attemptId})`);
+
+        for (const authz of authorizations) {
+            if (authz.status === 'valid') {
+                console.log(`Authorization already valid for ${authz.identifier.value} (${options.attemptId})`);
+                continue;
+            }
+
+            // Find http-01 challenge
+            const challenge = authz.challenges.find(c => c.type === 'http-01');
+            if (!challenge) {
+                throw new Error(`No http-01 challenge found for ${authz.identifier.value} (${options.attemptId})`);
+            }
+
+            // Complete challenge - response is stateless via getChallengeResponse()
+            console.log(`Completing http-01 challenge for ${authz.identifier.value} (${options.attemptId})`);
+            await this.acmeClient.completeChallenge(challenge);
+            await this.acmeClient.waitForValidStatus(challenge);
+        }
+
+        // Finalize order and get certificate
+        console.log(`Finalizing order for ${domain} (${options.attemptId})`);
+        const finalized = await this.acmeClient.finalizeOrder(order, csr);
+        const cert = await this.acmeClient.getCertificate(finalized);
+
+        console.log(`Successfully issued short-lived certificate for ${domain} (${options.attemptId})`);
 
         return {
             key: key.toString(),
