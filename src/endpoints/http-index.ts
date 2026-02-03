@@ -11,15 +11,14 @@ export type HttpHandler = (
     options: {
         path: string;
         query: URLSearchParams;
-        handleRequest: (req: HttpRequest, res: HttpResponse) => void;
     }
 ) => MaybePromise<void>;
 
 export interface HttpEndpoint {
     matchPath: (path: string, hostnamePrefix: string | undefined) => boolean;
     handle: HttpHandler;
-    /** If true, raw connection data will be captured for this endpoint (e.g. for echo) */
     needsRawData?: boolean;
+    getRemainingPath?: (path: string) => string | undefined;
 }
 
 export * from './http/echo.js';

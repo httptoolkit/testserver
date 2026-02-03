@@ -1,36 +1,45 @@
 import { delay } from '@httptoolkit/util';
-import { HttpHandler } from '../http-index.js';
+import { HttpEndpoint, HttpHandler } from '../http-index.js';
 import { buildHttpBinAnythingEndpoint } from '../../httpbin-compat.js';
 
 const matchPath = (path: string) => path.startsWith('/delay/');
+
+const getRemainingPath = (path: string): string | undefined => {
+    const idx = path.indexOf('/', '/delay/'.length);
+    return idx !== -1 ? path.slice(idx) : undefined;
+};
+
+const parseDelaySeconds = (path: string): number => {
+    const idx = path.indexOf('/', '/delay/'.length);
+    const end = idx !== -1 ? idx : path.length;
+    return parseFloat(path.slice('/delay/'.length, end));
+};
 
 const defaultAnythingEndpoint = buildHttpBinAnythingEndpoint({
     fieldFilter: ["url", "args", "form", "data", "origin", "headers", "files"]
 });
 
-const handle: HttpHandler = async (req, res, { path, handleRequest }) => {
-    const followingSlashIndex = path.indexOf('/', '/delay/'.length);
-    const followingUrl = followingSlashIndex !== -1 ? path.slice(followingSlashIndex) : '';
-    const endOfDelay = followingSlashIndex === -1 ? path.length : followingSlashIndex;
-    const delayMs = parseFloat(path.slice('/delay/'.length, endOfDelay));
+const handle: HttpHandler = async (req, res, { path }) => {
+    const delaySeconds = parseDelaySeconds(path);
 
-    if (isNaN(delayMs)) {
+    if (isNaN(delaySeconds)) {
         res.writeHead(400);
         res.end('Invalid delay duration');
-    }
-
-    await delay(Math.min(delayMs, 10) * 1000); // 10s max
-
-    if (followingUrl) {
-        req.url = followingUrl;
-        handleRequest(req, res);
         return;
-    } else {
-        return defaultAnythingEndpoint(req, res);
     }
-}
 
-export const delayEndpoint = {
+    const cappedDelayMs = Math.min(delaySeconds, 10) * 1000;
+    await delay(cappedDelayMs);
+
+    if (getRemainingPath(path)) {
+        return; // Handler continues to next endpoint in chain
+    }
+
+    return defaultAnythingEndpoint(req, res);
+};
+
+export const delayEndpoint: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    getRemainingPath
 };

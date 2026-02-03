@@ -1,10 +1,47 @@
 import { TLSSocket } from 'tls';
 import * as http from 'http';
 import * as http2 from 'http2';
-import { MaybePromise } from '@httptoolkit/util';
+import { MaybePromise, StatusError } from '@httptoolkit/util';
 
 import { httpEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
+
+const MAX_CHAIN_DEPTH = 10;
+
+function resolveEndpointChain(initialPath: string, hostnamePrefix: string | undefined) {
+    const entries: Array<{ endpoint: typeof httpEndpoints[number]; path: string }> = [];
+    let needsRawData = false;
+    let path: string | undefined = initialPath;
+
+    while (path && entries.length <= MAX_CHAIN_DEPTH) {
+        const endpoint = httpEndpoints.find(ep => ep.matchPath(path!, hostnamePrefix));
+        if (!endpoint) break;
+
+        entries.push({ endpoint, path });
+        needsRawData ||= !!endpoint.needsRawData;
+        path = endpoint.getRemainingPath?.(path);
+    }
+
+    if (path) {
+        throw new StatusError(400, `Endpoint chain exceeded maximum depth with path: ${initialPath}`);
+    }
+
+    return { entries, needsRawData };
+}
+
+function stopRawDataCapture(req: HttpRequest): void {
+    if (req.httpVersion === '2.0') {
+        const stream = (req as any).stream;
+        const session = stream?.session;
+        const capturingStream = session?.socket?.stream;
+        const streamId = stream?.id as number | undefined;
+        if (streamId !== undefined) {
+            capturingStream?.stopCapturingStream?.(streamId);
+        }
+    } else {
+        req.socket.receivedData = undefined;
+    }
+}
 
 const allowCORS = (req: HttpRequest, res: HttpResponse) => {
     const origin = req.headers['origin'];
@@ -90,49 +127,37 @@ function createHttpRequestHandler(options: {
         }
 
         // Now we begin the various test endpoints themselves:
+
         allowCORS(req, res);
 
         if (req.method === 'OPTIONS') {
             // Handle preflight CORS requests for everything
             res.writeHead(200);
             res.end();
+            return;
         }
 
-        const matchingEndpoint = httpEndpoints.find((endpoint) =>
-            endpoint.matchPath(path, hostnamePrefix)
-        );
+        const { entries, needsRawData } = resolveEndpointChain(path, hostnamePrefix);
 
-        // Stop data capturing unless the endpoint needs it
-        if (!matchingEndpoint || !matchingEndpoint.needsRawData) {
-            if (req.httpVersion === '2.0') {
-                const stream = (req as any).stream;
-                const session = stream?.session;
-                const capturingStream = session?.socket?.stream;
-                const streamId = stream?.id as number | undefined;
-                if (streamId !== undefined) {
-                    capturingStream?.stopCapturingStream?.(streamId);
-                }
-            } else {
-                // HTTP/1: stop capturing and clear buffer
-                req.socket.receivedData = undefined;
-            }
+        if (!needsRawData) {
+            stopRawDataCapture(req);
         }
 
-        if (matchingEndpoint) {
-            console.log(`Request to ${path}${
-                hostnamePrefix
-                    ? ` ('${hostnamePrefix}' prefix)`
-                    : ` (${options.rootDomain})`
-            } matched endpoint ${matchingEndpoint.name}`);
-            await matchingEndpoint.handle(req, res, {
-                path,
-                query: url.searchParams,
-                handleRequest
-            });
-        } else {
+        if (entries.length === 0) {
             console.log(`Request to ${path} matched no endpoints`);
             res.writeHead(404);
             res.end(`No handler for ${req.url}`);
+            return;
+        }
+
+        const endpointNames = entries.map(e => e.endpoint.name).join(' → ');
+        console.log(`Request to ${path}${
+            hostnamePrefix ? ` ('${hostnamePrefix}' prefix)` : ` (${options.rootDomain})`
+        } matched: ${endpointNames}`);
+
+        for (const { endpoint, path } of entries) {
+            if (res.writableEnded) return;
+            await endpoint.handle(req, res, { path, query: url.searchParams });
         }
     }
 }
@@ -159,6 +184,9 @@ export function createHttp1Handler(options: {
             if (res.closed) return;
             else if (res.headersSent) {
                 res.destroy();
+            } else if (e instanceof StatusError) {
+                res.writeHead(e.statusCode);
+                res.end(e.message);
             } else {
                 res.writeHead(500);
                 res.end('HTTP handler failed');
