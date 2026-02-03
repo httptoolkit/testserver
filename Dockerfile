@@ -13,4 +13,5 @@ COPY src/ src/
 
 ARG GIT_HASH
 ENV VERSION_HASH=${GIT_HASH}
+ENV NODE_OPTIONS="--insecure-http-parser"
 CMD ["npm", "start"]
