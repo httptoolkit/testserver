@@ -8,7 +8,8 @@ import {
 } from 'read-tls-client-hello';
 
 import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
-import { createTlsHandler, CertMode } from './tls-handler.js';
+import { createTlsHandler } from './tls-handler.js';
+import { CertOptions } from './tls-certificates/cert-definitions.js';
 import { ConnectionProcessor } from './process-connection.js';
 
 import { AcmeCA, AcmeProvider } from './tls-certificates/acme.js';
@@ -60,8 +61,8 @@ async function generateTlsConfig(options: ServerOptions) {
         await certCache.loadCache();
     }
 
-    const ca = await LocalCA.create(caCert);
-    const defaultCert = await ca.generateCertificate(rootDomain);
+    const localCA = await LocalCA.create(caCert);
+    const defaultCert = await localCA.generateCertificate(rootDomain, {});
 
     if (!options.acmeProvider) {
         console.log('Using self signed certificates');
@@ -70,12 +71,13 @@ async function generateTlsConfig(options: ServerOptions) {
             key: defaultCert.key,
             cert: defaultCert.cert,
             ca: caCert.cert,
-            localCA: ca,
-            generateCertificate: async (domain: string, mode?: CertMode) => {
-                if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
-                if (mode === 'expired') return await ca.generateExpiredCertificate(domain);
-                if (mode === 'revoked') return await ca.generateRevokedCertificate(domain);
-                return await ca.generateCertificate(domain);
+            localCA,
+            generateCertificate: async (domain: string, options: CertOptions) => {
+                if (options.requiredType === 'acme') {
+                    throw new Error(`Can't generate cert for ${domain} without ACME`);
+                }
+
+                return await localCA.generateCertificate(domain, options);
             },
             acmeChallenge: () => undefined // Not supported
         };
@@ -94,7 +96,7 @@ async function generateTlsConfig(options: ServerOptions) {
     }
 
     const acmeCA = new AcmeCA(certCache!, options.acmeProvider, options.acmeAccountKey);
-    acmeCA.tryGetCertificateSync(rootDomain); // Preload the root domain every time
+    acmeCA.tryGetCertificateSync(rootDomain, {}); // Preload the root domain every time
 
     return {
         rootDomain,
@@ -102,32 +104,22 @@ async function generateTlsConfig(options: ServerOptions) {
         key: defaultCert.key,
         cert: defaultCert.cert,
         ca: caCert.cert,
-        localCA: ca,
-        generateCertificate: async (domain: string, mode?: CertMode) => {
-            if (mode === 'self-signed') return await ca.generateSelfSignedCertificate(domain);
-
-            if (mode === 'expired') {
-                // Try to get an actually-expired ACME cert; fall back to LocalCA if not expired yet
-                const expiredAcmeCert = acmeCA.tryGetExpiredCertificateSync(domain);
-                if (expiredAcmeCert) return expiredAcmeCert;
-                return await ca.generateExpiredCertificate(domain);
+        localCA,
+        generateCertificate: async (domain: string, options: CertOptions) => {
+            if (options.requiredType === 'local') {
+                return await localCA.generateCertificate(domain, options);
             }
 
-            if (mode === 'revoked') {
-                // Try to get a revoked ACME cert; fall back to LocalCA revoked cert
-                const revokedAcmeCert = acmeCA.tryGetRevokedCertificateSync(domain);
-                if (revokedAcmeCert) return revokedAcmeCert;
-                return await ca.generateRevokedCertificate(domain);
-            }
+            const cert = acmeCA.tryGetCertificateSync(domain, options);
 
-            if (domain === rootDomain || domain.endsWith('.' + rootDomain)) {
-                const cert = acmeCA.tryGetCertificateSync(domain);
-                if (cert) return cert;
+            if (cert) {
+                return cert;
+            } else {
+                if (options.requiredType === 'acme') {
+                    return await acmeCA.waitForCertificate(domain, options);
+                }
+                return await localCA.generateCertificate(domain, options);
             }
-
-            // If you use some other domain or the cert isn't immediately available, we fall back
-            // to self-signed certs for now:
-            return await ca.generateCertificate(domain);
         },
         acmeChallenge: (token: string) => acmeCA.getChallengeResponse(token)
     }

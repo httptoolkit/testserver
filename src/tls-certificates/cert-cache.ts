@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as crypto from 'node:crypto';
 
 interface CachedCertificate {
+    cacheKey: string;
     domain: string;
     key: string;
     cert: string;
@@ -15,7 +16,7 @@ export class PersistentCertCache {
         private certCacheDir: string
     ) {}
 
-    cache: { [domain: string]: CachedCertificate | undefined } = {};
+    cache: { [cacheKey: string]: CachedCertificate | undefined } = {};
 
     async loadCache() {
         const certFiles = await fs.readdir(this.certCacheDir)
@@ -55,9 +56,13 @@ export class PersistentCertCache {
                 if (!data.cert) throw new Error('No cert in cert file');
                 if (!data.expiry) throw new Error('No expiry in cert file');
 
-                console.log(`Loaded cached cert for ${data.domain}`);
+                // Older cached certs don't explicitly include the key (but they only
+                // support the domain as the key anyway, so that's OK).
+                const cacheKey = data.cacheKey || data.domain;
 
-                this.cache[data.domain] = data;
+                console.log(`Loaded cached cert for ${cacheKey}`);
+
+                this.cache[cacheKey] = data;
             } catch (e) {
                 console.log(`Could not load cert from ${certName}:`, e);
             }
@@ -65,31 +70,29 @@ export class PersistentCertCache {
     }
 
     cacheCert(cert: CachedCertificate): CachedCertificate | undefined {
-        const { domain } = cert;
-
-        this.cache[domain] = cert;
+        this.cache[cert.cacheKey] = cert;
 
         fs.writeFile(
-            path.join(this.certCacheDir, `${domain}.cert.json`),
+            path.join(this.certCacheDir, `${cert.cacheKey}.cert.json`),
             JSON.stringify(cert)
         ).catch((e) => {
-            console.warn(`Failed to cache to disk certificate data for ${domain}`);
+            console.warn(`Failed to cache to disk certificate data for ${cert.cacheKey}`);
         });
 
-        console.log(`Cached cert for ${domain}, hash:${crypto.hash('sha256', cert.cert)}`);
-        return this.cache[domain];
+        console.log(`Cached cert for ${cert.cacheKey}, hash:${crypto.hash('sha256', cert.cert)}`);
+        return this.cache[cert.cacheKey];
     }
 
-    clearCache(domain: string) {
-        delete this.cache[domain];
+    clearCache(cacheKey: string) {
+        delete this.cache[cacheKey];
     }
 
-    getCert(domain: string): CachedCertificate | undefined {
-        const cert = this.cache[domain];
+    getCert(cacheKey: string): CachedCertificate | undefined {
+        const cert = this.cache[cacheKey];
 
         console.log(cert
-            ? `Found cached cert for ${domain}`
-            : `No cert available for ${domain}`
+            ? `Found cached cert for ${cacheKey}`
+            : `No cert available for ${cacheKey}`
         );
 
         return cert;

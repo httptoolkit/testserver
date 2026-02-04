@@ -182,7 +182,7 @@ Connection: keep-alive
                 rejectUnauthorized: false
             });
 
-            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
                 conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
                 conn.on('error', reject);
             });
@@ -222,7 +222,7 @@ Connection: keep-alive
                 rejectUnauthorized: false
             });
 
-            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
                 conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
                 conn.on('error', reject);
             });
@@ -262,7 +262,7 @@ Connection: keep-alive
                 rejectUnauthorized: false
             });
 
-            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false]>((resolve, reject) => {
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
                 conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
                 conn.on('error', reject);
             });

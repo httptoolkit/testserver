@@ -60,7 +60,7 @@ describe("Revoked certificate endpoint", () => {
                 servername: 'revoked.localhost',
                 rejectUnauthorized: false,
                 requestOCSP: true // Request OCSP stapling
-            });
+            } as any);
 
             socket.on('OCSPResponse', (response) => {
                 socket.end();
@@ -96,7 +96,7 @@ describe("Revoked certificate endpoint", () => {
                     servername: 'revoked.localhost',
                     rejectUnauthorized: false, // We'll check OCSP manually
                     requestOCSP: true
-                });
+                } as any);
 
                 socket.on('OCSPResponse', (response) => {
                     ocspResponseReceived = true;
@@ -137,7 +137,7 @@ describe("Revoked certificate endpoint", () => {
                 servername: 'localhost',
                 rejectUnauthorized: false,
                 requestOCSP: true
-            });
+            } as any);
 
             socket.on('OCSPResponse', (response) => {
                 socket.end();

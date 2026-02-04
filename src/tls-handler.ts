@@ -2,14 +2,10 @@ import * as tls from 'tls';
 
 import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
+import { CertOptions } from './tls-certificates/cert-definitions.js';
+import { tlsEndpoints } from './endpoints/endpoint-index.js';
 
-export const CERT_MODES = ['wrong-host', 'self-signed', 'expired', 'revoked'] as const;
-export type CertMode = typeof CERT_MODES[number];
-
-// Modes that require special certificate generation (vs just domain remapping)
-const CERT_GENERATION_MODES = new Set<CertMode>(['self-signed', 'expired', 'revoked']);
-
-export type CertGenerator = (domain: string, mode?: CertMode) => Promise<{
+export type CertGenerator = (domain: string, certOptions: CertOptions) => Promise<{
     key: string,
     cert: string,
     ca?: string
@@ -27,10 +23,6 @@ interface TlsHandlerConfig {
 }
 
 const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
-const SNI_PROTOCOL_FILTERS: { [key: string]: string } = {
-    'http2': 'h2',
-    'http1': 'http/1.1'
-};
 
 const getSNIPrefixParts = (servername: string, rootDomain: string) => {
     const serverNamePrefix = servername.endsWith(rootDomain)
@@ -41,28 +33,37 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
     return serverNamePrefix.split('.');
 };
 
-const CERT_MODE_SET = new Set<string>(CERT_MODES);
-
-const VALID_SNI_PARTS = new Set([
-    ...Object.keys(SNI_PROTOCOL_FILTERS),
-    'no-tls',
-    'example',
-    ...CERT_MODES
-]);
-
 const MAX_SNI_PARTS = 3;
 
 const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
 
-function proactivelyRefreshDomains(domains: string[], certGenerator: CertGenerator) {
+function proactivelyRefreshDomains(rootDomain: string, domains: string[], certGenerator: CertGenerator) {
     domains.forEach(domain => {
+        const serverNameParts = getSNIPrefixParts(domain, rootDomain);
+
+        const endpoints = getEndpoints(serverNameParts);
+        let certOptions: CertOptions = {};
+        for (let endpoint of endpoints) {
+            certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
+        }
+
         console.log(`Proactively checking cert at startup for ${domain}`);
-        certGenerator(domain).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
+        certGenerator(domain, certOptions).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
 
         setInterval(() => {
             console.log(`Proactively checking cert for ${domain}`);
-            certGenerator(domain).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
+            certGenerator(domain, certOptions).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
         }, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
+    });
+}
+
+function getEndpoints(serverNameParts: string[]) {
+    return serverNameParts.map((part) => {
+        const endpoint = tlsEndpoints.find(e => e.sniPart === part)
+        if (!endpoint) {
+            throw new Error(`Unknown SNI part ${part}`);
+        }
+        return endpoint;
     });
 }
 
@@ -79,18 +80,21 @@ export async function createTlsHandler(
             // If specific protocol(s) are provided as part of the server name,
             // only negotiate those via ALPN.
             const serverNameParts = getSNIPrefixParts(servername, tlsConfig.rootDomain);
+            const endpoints = getEndpoints(serverNameParts);
 
-            let protocolFilterNames = serverNameParts.filter(protocol =>
-                SNI_PROTOCOL_FILTERS[protocol]
-            );
-            const serverProtocols = protocolFilterNames.length > 0
-                ? protocolFilterNames.map(protocol => SNI_PROTOCOL_FILTERS[protocol])
-                : DEFAULT_ALPN_PROTOCOLS;
+            let alpnPreferences: string[] = [];
+            for (let endpoint of endpoints) {
+                alpnPreferences = endpoint.configureAlpnPreferences?.(alpnPreferences) ?? alpnPreferences;
+            }
+
+            if (alpnPreferences.length === 0) {
+                alpnPreferences = DEFAULT_ALPN_PROTOCOLS;
+            }
 
             // Enforce our own protocol preference over the client's (they can
             // specify a preference via SNI, if they so choose). This also means
             // we accept a preference order in our SNI as well e.g. http2.http1.*.
-            return serverProtocols.find(protocol => clientProtocols.includes(protocol));
+            return alpnPreferences.find(protocol => clientProtocols.includes(protocol));
         },
         SNICallback: async (domain: string, cb: Function) => {
             try {
@@ -100,45 +104,43 @@ export async function createTlsHandler(
                     return cb(new Error(`Too many SNI parts (${serverNameParts.length})`), null);
                 }
 
-                if (serverNameParts.some(part => !VALID_SNI_PARTS.has(part))) {
-                    return cb(new Error(`Invalid SNI part in '${domain}'`), null);
-                }
-
                 const uniqueParts = new Set(serverNameParts);
                 if (uniqueParts.size !== serverNameParts.length) {
                     return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
                 }
 
-                if (serverNameParts.includes('no-tls')) {
-                    return cb(new Error('Intentionally rejecting TLS connection'), null);
+                const endpoints = getEndpoints(serverNameParts);
+
+                let certOptions: CertOptions = {};
+                let tlsOptions: tls.SecureContextOptions = {};
+                for (let endpoint of endpoints) {
+                    // Cert options are merged together directly:
+                    certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
+
+                    // TLS options may be combined in more clever ways:
+                    tlsOptions = endpoint.configureTlsOptions?.(tlsOptions) ?? tlsOptions;
                 }
 
-                const certModeParts = serverNameParts.filter(part => CERT_MODE_SET.has(part)) as CertMode[];
-                if (certModeParts.length > 1) {
-                    return cb(new Error(`Multiple cert modes not yet supported: ${certModeParts.join(', ')}`), null);
-                }
+                const certDomain = (certOptions.overridePrefix)
+                    ? `${certOptions.overridePrefix}.${tlsConfig.rootDomain}`
+                    : domain;
 
-                let certDomain = domain;
-                if (certModeParts.includes('wrong-host')) {
-                    certDomain = `example.${tlsConfig.rootDomain}`;
-                }
+                const generatedCert = await tlsConfig.generateCertificate(certDomain, certOptions);
 
-                const generationMode = certModeParts.find(mode => CERT_GENERATION_MODES.has(mode));
-
-                const generatedCert = await tlsConfig.generateCertificate(certDomain, generationMode);
                 cb(null, tls.createSecureContext({
                     key: generatedCert.key,
                     cert: generatedCert.cert,
-                    ca: generatedCert.ca
+                    ca: generatedCert.ca,
+                    ...tlsOptions
                 }));
             } catch (e) {
-                console.error('Cert generation error', e);
+                console.error('TLS setup error', e);
                 cb(e);
             }
         }
     });
 
-    proactivelyRefreshDomains(tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
+    proactivelyRefreshDomains(tlsConfig.rootDomain, tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
 
     // Copy TLS fingerprint from underlying socket to TLS socket
     server.prependListener('secureConnection', (tlsSocket) => {
