@@ -1,9 +1,30 @@
 import * as tls from 'tls';
+import * as crypto from 'node:crypto';
 
 import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
-import { CertOptions } from './tls-certificates/cert-definitions.js';
+import { CertOptions, calculateCertCacheKey } from './tls-certificates/cert-definitions.js';
+import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
+
+const secureContextCache = new SecureContextCache();
+
+function calculateContextCacheKey(
+    domain: string,
+    certOptions: CertOptions,
+    tlsOptions: tls.SecureContextOptions
+): string {
+    const certKey = calculateCertCacheKey(domain, certOptions);
+    const tlsKey = Object.keys(tlsOptions).length > 0
+        ? '|' + JSON.stringify(tlsOptions, Object.keys(tlsOptions).sort())
+        : '';
+    return certKey + tlsKey;
+}
+
+function getCertExpiry(certPem: string): number {
+    const cert = new crypto.X509Certificate(certPem);
+    return new Date(cert.validTo).getTime();
+}
 
 export type CertGenerator = (domain: string, certOptions: CertOptions) => Promise<{
     key: string,
@@ -38,33 +59,37 @@ const MAX_SNI_PARTS = 3;
 const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
 
 function proactivelyRefreshDomains(rootDomain: string, domains: string[], certGenerator: CertGenerator) {
-    domains.forEach(domain => {
-        const serverNameParts = getSNIPrefixParts(domain, rootDomain);
+    for (const domain of domains) {
+        const { certOptions } = getEndpointConfig(getSNIPrefixParts(domain, rootDomain));
 
-        const endpoints = getEndpoints(serverNameParts);
-        let certOptions: CertOptions = {};
-        for (let endpoint of endpoints) {
-            certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
-        }
-
-        console.log(`Proactively checking cert at startup for ${domain}`);
-        certGenerator(domain, certOptions).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
-
-        setInterval(() => {
+        const refresh = () => {
             console.log(`Proactively checking cert for ${domain}`);
-            certGenerator(domain, certOptions).catch(e => console.error(`Failed to generate cert for ${domain}:`, e));
-        }, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
-    });
+            certGenerator(domain, certOptions).catch(e =>
+                console.error(`Failed to generate cert for ${domain}:`, e)
+            );
+        };
+
+        refresh();
+        setInterval(refresh, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
+    }
 }
 
-function getEndpoints(serverNameParts: string[]) {
-    return serverNameParts.map((part) => {
-        const endpoint = tlsEndpoints.find(e => e.sniPart === part)
+function getEndpointConfig(serverNameParts: string[]) {
+    let certOptions: CertOptions = {};
+    let tlsOptions: tls.SecureContextOptions = {};
+    let alpnPreferences: string[] = [];
+
+    for (const part of serverNameParts) {
+        const endpoint = tlsEndpoints.find(e => e.sniPart === part);
         if (!endpoint) {
             throw new Error(`Unknown SNI part ${part}`);
         }
-        return endpoint;
-    });
+        certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
+        tlsOptions = endpoint.configureTlsOptions?.(tlsOptions) ?? tlsOptions;
+        alpnPreferences = endpoint.configureAlpnPreferences?.(alpnPreferences) ?? alpnPreferences;
+    }
+
+    return { certOptions, tlsOptions, alpnPreferences };
 }
 
 export async function createTlsHandler(
@@ -77,24 +102,10 @@ export async function createTlsHandler(
         ca: [tlsConfig.ca],
 
         ALPNCallback: ({ servername, protocols: clientProtocols }) => {
-            // If specific protocol(s) are provided as part of the server name,
-            // only negotiate those via ALPN.
-            const serverNameParts = getSNIPrefixParts(servername, tlsConfig.rootDomain);
-            const endpoints = getEndpoints(serverNameParts);
-
-            let alpnPreferences: string[] = [];
-            for (let endpoint of endpoints) {
-                alpnPreferences = endpoint.configureAlpnPreferences?.(alpnPreferences) ?? alpnPreferences;
-            }
-
-            if (alpnPreferences.length === 0) {
-                alpnPreferences = DEFAULT_ALPN_PROTOCOLS;
-            }
-
-            // Enforce our own protocol preference over the client's (they can
-            // specify a preference via SNI, if they so choose). This also means
-            // we accept a preference order in our SNI as well e.g. http2.http1.*.
-            return alpnPreferences.find(protocol => clientProtocols.includes(protocol));
+            const { alpnPreferences } = getEndpointConfig(getSNIPrefixParts(servername, tlsConfig.rootDomain));
+            const protocols = alpnPreferences.length > 0 ? alpnPreferences : DEFAULT_ALPN_PROTOCOLS;
+            // Enforce our own preference order (client can specify via SNI e.g. http2.http1.*)
+            return protocols.find(p => clientProtocols.includes(p));
         },
         SNICallback: async (domain: string, cb: Function) => {
             try {
@@ -109,30 +120,28 @@ export async function createTlsHandler(
                     return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
                 }
 
-                const endpoints = getEndpoints(serverNameParts);
+                const { certOptions, tlsOptions } = getEndpointConfig(serverNameParts);
 
-                let certOptions: CertOptions = {};
-                let tlsOptions: tls.SecureContextOptions = {};
-                for (let endpoint of endpoints) {
-                    // Cert options are merged together directly:
-                    certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
-
-                    // TLS options may be combined in more clever ways:
-                    tlsOptions = endpoint.configureTlsOptions?.(tlsOptions) ?? tlsOptions;
-                }
-
-                const certDomain = (certOptions.overridePrefix)
+                const certDomain = certOptions.overridePrefix
                     ? `${certOptions.overridePrefix}.${tlsConfig.rootDomain}`
                     : domain;
 
-                const generatedCert = await tlsConfig.generateCertificate(certDomain, certOptions);
+                const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions);
 
-                cb(null, tls.createSecureContext({
-                    key: generatedCert.key,
-                    cert: generatedCert.cert,
-                    ca: generatedCert.ca,
-                    ...tlsOptions
-                }));
+                const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
+                    const cert = await tlsConfig.generateCertificate(certDomain, certOptions);
+                    return {
+                        context: tls.createSecureContext({
+                            key: cert.key,
+                            cert: cert.cert,
+                            ca: cert.ca,
+                            ...tlsOptions
+                        }),
+                        expiry: getCertExpiry(cert.cert)
+                    };
+                });
+
+                cb(null, secureContext);
             } catch (e) {
                 console.error('TLS setup error', e);
                 cb(e);
