@@ -15,7 +15,13 @@ function resolveEndpointChain(initialPath: string, hostnamePrefix: string | unde
 
     while (path && entries.length <= MAX_CHAIN_DEPTH) {
         const endpoint = httpEndpoints.find(ep => ep.matchPath(path!, hostnamePrefix));
-        if (!endpoint) break;
+        if (!endpoint) {
+            throw new StatusError(404, `Could not match endpoint for ${initialPath}${
+                hostnamePrefix
+                ? ` (${hostnamePrefix})`
+                : ''
+            }`);
+        }
 
         entries.push({ endpoint, path });
         needsRawData ||= !!endpoint.needsRawData;
