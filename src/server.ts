@@ -35,6 +35,8 @@ interface ServerOptions {
     acmeAccountKey?: string;
     proactiveCertDomains?: string[];
     certCacheDir?: string;
+    localCaKey?: string;
+    localCaCert?: string;
 }
 
 async function generateTlsConfig(options: ServerOptions) {
@@ -43,12 +45,20 @@ async function generateTlsConfig(options: ServerOptions) {
     const certCache = options.certCacheDir
         ? new PersistentCertCache(options.certCacheDir)
         : undefined;
-    const [
-        caCert
-    ] = await Promise.all([
-        generateCACertificate(),
-        certCache ? certCache.loadCache() : null
-    ]);
+
+    // Use provided CA key/cert if available, otherwise generate a fresh one
+    let caCert: { key: string; cert: string };
+    if (options.localCaKey && options.localCaCert) {
+        console.log('Using provided local CA certificate');
+        caCert = { key: options.localCaKey, cert: options.localCaCert };
+    } else {
+        console.log('Generating fresh local CA certificate');
+        caCert = await generateCACertificate();
+    }
+
+    if (certCache) {
+        await certCache.loadCache();
+    }
 
     const ca = await LocalCA.create(caCert);
     const defaultCert = await ca.generateCertificate(rootDomain);
@@ -186,7 +196,9 @@ if (wasRunDirectly) {
         proactiveCertDomains: process.env.PROACTIVE_CERT_DOMAINS?.split(','),
         acmeProvider: process.env.ACME_PROVIDER as AcmeProvider | undefined,
         acmeAccountKey: process.env.ACME_ACCOUNT_KEY,
-        certCacheDir: process.env.CERT_CACHE_DIR
+        certCacheDir: process.env.CERT_CACHE_DIR,
+        localCaKey: process.env.LOCAL_CA_KEY,
+        localCaCert: process.env.LOCAL_CA_CERT
     }).then((tcpHandler) => {
         ports.forEach((port) => {
             const server = createTcpServer(tcpHandler);
