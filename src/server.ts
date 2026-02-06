@@ -118,7 +118,10 @@ async function generateTlsConfig(options: ServerOptions) {
                 if (options.requiredType === 'acme') {
                     return await acmeCA.waitForCertificate(domain, options);
                 }
-                return await localCA.generateCertificate(domain, options);
+                // Local CA fallback while ACME cert is pending - mark as temporary
+                // so it gets a short cache time and ACME cert is used once available
+                const fallbackCert = await localCA.generateCertificate(domain, options);
+                return { ...fallbackCert, isTemporary: true };
             }
         },
         acmeChallenge: (token: string) => acmeCA.getChallengeResponse(token)

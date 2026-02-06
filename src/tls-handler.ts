@@ -29,11 +29,15 @@ function getCertExpiry(certPem: string): number {
     return new Date(cert.validTo).getTime();
 }
 
-export type CertGenerator = (domain: string, certOptions: CertOptions) => Promise<{
+export type GeneratedCertificate = {
     key: string,
     cert: string,
-    ca?: string
-}>;
+    ca?: string,
+    /** If true, this is a temporary fallback cert, while ACME does its work */
+    isTemporary?: boolean
+};
+
+export type CertGenerator = (domain: string, certOptions: CertOptions) => Promise<GeneratedCertificate>;
 
 interface TlsHandlerConfig {
     rootDomain: string;
@@ -161,7 +165,11 @@ class TlsConnectionHandler {
                         ca: cert.ca,
                         ...tlsOptions
                     }),
-                    expiry: getCertExpiry(cert.cert)
+                    // Temporary certs (e.g. local CA fallback while ACME pending) get short cache
+                    // to allow the real cert to be picked up once available
+                    expiry: cert.isTemporary
+                        ? Date.now() + 5000
+                        : getCertExpiry(cert.cert)
                 };
             });
 
