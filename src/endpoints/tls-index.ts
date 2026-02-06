@@ -12,3 +12,4 @@ export * from './tls/alpn-specifiers.js';
 export * from './tls/cert-modes.js';
 export * from './tls/example.js';
 export * from './tls/no-tls.js';
+export * from './tls/tls-versions.js';

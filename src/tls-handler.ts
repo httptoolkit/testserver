@@ -1,11 +1,14 @@
 import * as tls from 'tls';
 import * as crypto from 'node:crypto';
+import * as stream from 'stream';
+import { EventEmitter } from 'events';
 
 import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
 import { CertOptions, calculateCertCacheKey } from './tls-certificates/cert-definitions.js';
 import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
+import { ErrorLike } from '@httptoolkit/util';
 
 const secureContextCache = new SecureContextCache();
 
@@ -40,7 +43,7 @@ interface TlsHandlerConfig {
     cert: string;
     ca: string;
     generateCertificate: CertGenerator;
-    localCA?: LocalCA;
+    localCA: LocalCA;
 }
 
 const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
@@ -54,7 +57,7 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
     return serverNamePrefix.split('.');
 };
 
-const MAX_SNI_PARTS = 3;
+const MAX_SNI_PARTS = 4;
 
 const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
 
@@ -92,82 +95,26 @@ function getEndpointConfig(serverNameParts: string[]) {
     return { certOptions, tlsOptions, alpnPreferences };
 }
 
-export async function createTlsHandler(
-    tlsConfig: TlsHandlerConfig,
-    connProcessor: ConnectionProcessor
-) {
-    const server = tls.createServer({
-        key: tlsConfig.key,
-        cert: tlsConfig.cert,
-        ca: [tlsConfig.ca],
-
-        ALPNCallback: ({ servername, protocols: clientProtocols }) => {
-            const { alpnPreferences } = getEndpointConfig(getSNIPrefixParts(servername, tlsConfig.rootDomain));
-            const protocols = alpnPreferences.length > 0 ? alpnPreferences : DEFAULT_ALPN_PROTOCOLS;
-            // Enforce our own preference order (client can specify via SNI e.g. http2.http1.*)
-            return protocols.find(p => clientProtocols.includes(p));
-        },
-        SNICallback: async (domain: string, cb: Function) => {
-            try {
-                const serverNameParts = getSNIPrefixParts(domain, tlsConfig.rootDomain);
-
-                if (serverNameParts.length > MAX_SNI_PARTS) {
-                    return cb(new Error(`Too many SNI parts (${serverNameParts.length})`), null);
-                }
-
-                const uniqueParts = new Set(serverNameParts);
-                if (uniqueParts.size !== serverNameParts.length) {
-                    return cb(new Error(`Duplicate SNI parts in '${domain}'`), null);
-                }
-
-                const { certOptions, tlsOptions } = getEndpointConfig(serverNameParts);
-
-                const certDomain = certOptions.overridePrefix
-                    ? `${certOptions.overridePrefix}.${tlsConfig.rootDomain}`
-                    : domain;
-
-                const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions);
-
-                const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
-                    const cert = await tlsConfig.generateCertificate(certDomain, certOptions);
-                    return {
-                        context: tls.createSecureContext({
-                            key: cert.key,
-                            cert: cert.cert,
-                            ca: cert.ca,
-                            ...tlsOptions
-                        }),
-                        expiry: getCertExpiry(cert.cert)
-                    };
-                });
-
-                cb(null, secureContext);
-            } catch (e) {
-                console.error('TLS setup error', e);
-                cb(e);
-            }
-        }
-    });
-
-    proactivelyRefreshDomains(tlsConfig.rootDomain, tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
-
-    // Copy TLS fingerprint from underlying socket to TLS socket
-    server.prependListener('secureConnection', (tlsSocket) => {
-        const parent = (tlsSocket as any)._parent;
-        if (parent?.tlsClientHello) {
-            (tlsSocket as any).tlsClientHello = parent.tlsClientHello;
-        }
-    });
+class TlsConnectionHandler {
     
-    // Handle OCSP stapling requests
-    if (tlsConfig.localCA) {
-        server.on('OCSPRequest', async (cert, issuer, callback) => {
+    // To keep Node happy, we need a TLS server attached to our sockets in some cases
+    // to enable some features (like OCSP). This'll do:
+    private ocspServer = new EventEmitter();
+
+    constructor(
+        private tlsConfig: TlsHandlerConfig,
+        private connProcessor: ConnectionProcessor
+    ) {
+        this.ocspServer.on('OCSPRequest', async (
+            certificate: Buffer,
+            _issuer: Buffer,
+            callback: (err: Error | null, response: Buffer) => void
+        ) => {
             try {
-                const ocspResponse = await tlsConfig.localCA!.getOcspResponse(cert);
+                const ocspResponse = await this.tlsConfig.localCA!.getOcspResponse(certificate);
                 if (ocspResponse) {
                     callback(null, ocspResponse);
                 } else {
-                    // No OCSP response available - don't staple anything
                     callback(null, Buffer.alloc(0));
                 }
             } catch (e) {
@@ -177,9 +124,98 @@ export async function createTlsHandler(
         });
     }
 
-    server.on('secureConnection', (socket) => {
-        connProcessor.processConnection(socket);
-    });
+    async handleConnection(rawSocket: stream.Duplex) {
+        try {
+            const serverName = rawSocket.tlsClientHello?.serverName;
+            const domain = serverName || this.tlsConfig.rootDomain;
 
-    return server;
+            const serverNameParts = getSNIPrefixParts(domain, this.tlsConfig.rootDomain);
+
+            if (serverNameParts.length > MAX_SNI_PARTS) {
+                console.error(`Too many SNI parts (${serverNameParts.length})`);
+                rawSocket.destroy();
+                return;
+            }
+
+            const uniqueParts = new Set(serverNameParts);
+            if (uniqueParts.size !== serverNameParts.length) {
+                console.error(`Duplicate SNI parts in '${domain}'`);
+                rawSocket.destroy();
+                return;
+            }
+
+            const { certOptions, tlsOptions, alpnPreferences } = getEndpointConfig(serverNameParts);
+
+            const certDomain = certOptions.overridePrefix
+                ? `${certOptions.overridePrefix}.${this.tlsConfig.rootDomain}`
+                : domain;
+
+            const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions);
+
+            const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
+                const cert = await this.tlsConfig.generateCertificate(certDomain, certOptions);
+                return {
+                    context: tls.createSecureContext({
+                        key: cert.key,
+                        cert: cert.cert,
+                        ca: cert.ca,
+                        ...tlsOptions
+                    }),
+                    expiry: getCertExpiry(cert.cert)
+                };
+            });
+
+            const alpnProtocols = alpnPreferences.length > 0
+                ? alpnPreferences
+                : DEFAULT_ALPN_PROTOCOLS;
+
+            // Check if client requested OCSP stapling (extension 5 = status_request)
+            const clientExtensions = rawSocket.tlsClientHello?.fingerprintData?.[2];
+            const clientRequestedOCSP = clientExtensions?.includes(5) ?? false;
+
+            const tlsSocket = new tls.TLSSocket(rawSocket, {
+                isServer: true,
+                secureContext,
+                ALPNProtocols: alpnProtocols,
+                // Only set up OCSP machinery if client requested it
+                ...(clientRequestedOCSP ? {
+                    server: this.ocspServer as tls.Server,
+                    // Stub SNICallback to works around a Node limitation where non-server TLS
+                    // sockets don't call OCSPRequest in most cases.
+                    SNICallback: (
+                        _servername: string,
+                        callback: (err: Error | null, ctx?: tls.SecureContext) => void
+                    ) => callback(null, secureContext)
+                } : {})
+            });
+
+            // Transfer tlsClientHello metadata
+            if (rawSocket.tlsClientHello) {
+                tlsSocket.tlsClientHello = rawSocket.tlsClientHello;
+            }
+
+            tlsSocket.on('secure', () => {
+                this.connProcessor.processConnection(tlsSocket);
+            });
+
+            tlsSocket.on('error', (err: ErrorLike) => {
+                // Expected errors during handshake (version mismatch, etc.)
+                if (err.code !== 'ECONNRESET') {
+                    console.error('TLS socket error:', err.message);
+                }
+            });
+        } catch (e) {
+            console.error('TLS setup error', e);
+            rawSocket.destroy();
+        }
+    }
+}
+
+export async function createTlsHandler(
+    tlsConfig: TlsHandlerConfig,
+    connProcessor: ConnectionProcessor
+) {
+    const handler = new TlsConnectionHandler(tlsConfig, connProcessor);
+    proactivelyRefreshDomains(tlsConfig.rootDomain, tlsConfig.proactiveCertDomains ?? [], tlsConfig.generateCertificate);
+    return handler;
 }

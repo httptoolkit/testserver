@@ -10,7 +10,7 @@ const crypto = globalThis.crypto;
 
 // This is all approximately based on Mockttp's src/util/certificates.ts CA implementation
 
-export interface CAOptions {
+interface CAOptions {
     key: string;
     cert: string;
 

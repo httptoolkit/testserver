@@ -140,7 +140,7 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
                 // Non-TLS traffic or malformed client hello - continue without fingerprint
             }
             conn.pause();
-            tlsHandler.emit('connection', conn);
+            tlsHandler.handleConnection(conn);
         },
         (conn) => httpHandler.emit('connection', conn),
         (conn) => http2Handler.emit('connection', conn)

@@ -8,7 +8,7 @@ import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 
 const MAX_CHAIN_DEPTH = 10;
 
-function resolveEndpointChain(initialPath: string, hostnamePrefix: string | undefined) {
+function resolveEndpointChain(initialPath: string, hostnamePrefix?: string) {
     const entries: Array<{ endpoint: typeof httpEndpoints[number]; path: string }> = [];
     let needsRawData = false;
     let path: string | undefined = initialPath;
