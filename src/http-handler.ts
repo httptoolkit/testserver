@@ -6,35 +6,7 @@ import { MaybePromise, StatusError } from '@httptoolkit/util';
 import { httpEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
-
-const MAX_CHAIN_DEPTH = 10;
-
-function resolveEndpointChain(initialPath: string, hostnamePrefix?: string) {
-    const entries: Array<{ endpoint: typeof httpEndpoints[number]; path: string }> = [];
-    let needsRawData = false;
-    let path: string | undefined = initialPath;
-
-    while (path && entries.length <= MAX_CHAIN_DEPTH) {
-        const endpoint = httpEndpoints.find(ep => ep.matchPath(path!, hostnamePrefix));
-        if (!endpoint) {
-            throw new StatusError(404, `Could not match endpoint for ${initialPath}${
-                hostnamePrefix
-                ? ` (${hostnamePrefix})`
-                : ''
-            }`);
-        }
-
-        entries.push({ endpoint, path });
-        needsRawData ||= !!endpoint.needsRawData;
-        path = endpoint.getRemainingPath?.(path);
-    }
-
-    if (path) {
-        throw new StatusError(400, `Endpoint chain exceeded maximum depth with path: ${initialPath}`);
-    }
-
-    return { entries, needsRawData };
-}
+import { resolveEndpointChain } from './endpoint-chain.js';
 
 function stopRawDataCapture(req: HttpRequest): void {
     if (req.httpVersion === '2.0') {
@@ -144,17 +116,11 @@ function createHttpRequestHandler(options: {
             return;
         }
 
-        const { entries, needsRawData } = resolveEndpointChain(path, hostnamePrefix);
+        const entries = resolveEndpointChain(httpEndpoints, path, hostnamePrefix);
+        const needsRawData = entries.some(e => e.endpoint.needsRawData);
 
         if (!needsRawData) {
             stopRawDataCapture(req);
-        }
-
-        if (entries.length === 0) {
-            console.log(`Request to ${path} matched no endpoints`);
-            res.writeHead(404);
-            res.end(`No handler for ${req.url}`);
-            return;
         }
 
         const endpointNames = entries.map(e => e.endpoint.name).join(' → ');

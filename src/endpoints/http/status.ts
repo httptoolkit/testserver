@@ -1,19 +1,24 @@
+import { StatusError } from '@httptoolkit/util';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
-const matchPath = (path: string) => path.startsWith('/status/');
+const parseStatusCode = (path: string): number => {
+    return parseInt(path.slice('/status/'.length), 10);
+};
 
 const handle: HttpHandler = (_req, res, { path }) => {
-    const statusCode = parseInt(path.slice('/status/'.length), 10);
-    if (isNaN(statusCode)) {
-        res.writeHead(400);
-        res.end('Invalid status code');
-    } else {
-        res.writeHead(statusCode);
-        res.end();
-    }
+    const statusCode = parseStatusCode(path);
+    res.writeHead(statusCode);
+    res.end();
 }
 
 export const status: HttpEndpoint = {
-    matchPath,
+    matchPath: (path) => {
+        if (!path.startsWith('/status/')) return false;
+        const statusCode = parseStatusCode(path);
+        if (isNaN(statusCode)) {
+            throw new StatusError(400, `Invalid status code in ${path}`);
+        }
+        return true;
+    },
     handle
 }
