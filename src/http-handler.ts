@@ -5,6 +5,7 @@ import { MaybePromise, StatusError } from '@httptoolkit/util';
 
 import { httpEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
+import { handleWebSocketUpgrade } from './ws-handler.js';
 
 const MAX_CHAIN_DEPTH = 10;
 
@@ -208,6 +209,10 @@ export function createHttp1Handler(options: {
     });
 
     handler.on('error', (err) => console.error('HTTP handler error', err));
+
+    handler.on('upgrade', (req, socket, head) => {
+        handleWebSocketUpgrade(req, socket, head, options);
+    });
 
     return handler;
 }
