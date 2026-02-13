@@ -15,3 +15,5 @@ export * from './ws/echo.js';
 export * from './ws/delay.js';
 export * from './ws/close.js';
 export * from './ws/message.js';
+export * from './ws/reset.js';
+export * from './ws/repeat.js';
