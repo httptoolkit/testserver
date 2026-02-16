@@ -1,4 +1,5 @@
 import { WebSocketEndpoint } from '../ws-index.js';
+import { wsMessaging } from '../groups.js';
 
 export const wsEchoEndpoint: WebSocketEndpoint = {
     matchPath: (path) => path === '/ws/echo',
@@ -8,5 +9,11 @@ export const wsEchoEndpoint: WebSocketEndpoint = {
                 ws.send(data, { binary: isBinary });
             }
         });
+    },
+    meta: {
+        path: '/ws/echo',
+        description: 'Echoes back any messages received.',
+        examples: ['/ws/echo'],
+        group: wsMessaging
     }
 };

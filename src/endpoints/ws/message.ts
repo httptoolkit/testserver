@@ -1,4 +1,5 @@
 import { WebSocketEndpoint } from '../ws-index.js';
+import { wsMessaging } from '../groups.js';
 
 const matchPath = (path: string) => path.startsWith('/ws/message/');
 
@@ -21,5 +22,11 @@ export const wsMessageEndpoint: WebSocketEndpoint = {
         if (ws.readyState === ws.OPEN) {
             ws.send(message);
         }
+    },
+    meta: {
+        path: '/ws/message/{text}',
+        description: 'Sends the specified message to the client upon connection. Can be chained with other WS endpoints.',
+        examples: ['/ws/message/hello', '/ws/message/hello/echo'],
+        group: wsMessaging
     }
 };

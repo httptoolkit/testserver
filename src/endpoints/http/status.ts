@@ -20,5 +20,10 @@ export const status: HttpEndpoint = {
         }
         return true;
     },
-    handle
+    handle,
+    meta: {
+        path: '/status/{code}',
+        description: 'Returns a response with the specified HTTP status code.',
+        examples: ['/status/200', '/status/404', '/status/500'],
+    }
 }

@@ -1,5 +1,6 @@
 import { StatusError } from '@httptoolkit/util';
 import { WebSocketEndpoint } from '../ws-index.js';
+import { wsMessaging } from '../groups.js';
 
 const REPEAT_PREFIX = '/ws/repeat/';
 
@@ -48,5 +49,11 @@ export const wsRepeatEndpoint: WebSocketEndpoint = {
         }, freqMs);
 
         ws.on('close', () => clearInterval(interval));
+    },
+    meta: {
+        path: '/ws/repeat/{message}/{intervalMs}',
+        description: 'Repeatedly sends the specified message at the given interval (in milliseconds). Can be chained with other WS endpoints.',
+        examples: ['/ws/repeat/ping/1000', '/ws/repeat/heartbeat/5000/echo'],
+        group: wsMessaging
     }
 };

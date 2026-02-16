@@ -1,3 +1,4 @@
+import { httpContentExamples } from '../groups.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) => path === '/xml';
@@ -36,5 +37,11 @@ const handle: HttpHandler = (req, res) => {
 
 export const xml: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/xml',
+        description: 'Returns a sample XML document.',
+        examples: ['/xml'],
+        group: httpContentExamples
+    }
 };

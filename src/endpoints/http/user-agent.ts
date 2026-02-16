@@ -15,5 +15,10 @@ const handle: HttpHandler = (req, res) => {
 
 export const userAgent: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/user-agent',
+        description: 'Returns the User-Agent header from the request.',
+        examples: ['/user-agent']
+    }
 };

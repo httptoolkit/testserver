@@ -39,5 +39,10 @@ export const delayEndpoint: HttpEndpoint = {
         return true;
     },
     handle,
-    getRemainingPath
+    getRemainingPath,
+    meta: {
+        path: '/delay/{seconds}',
+        description: 'Delays the response by the specified number of seconds (max 10). Can be chained with other endpoints.',
+        examples: ['/delay/1', '/delay/5', '/delay/2/status/200']
+    }
 };

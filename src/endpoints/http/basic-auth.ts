@@ -1,5 +1,6 @@
 import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpAuthentication } from '../groups.js';
 
 const matchPath = (path: string) =>
     !!path.match(/^\/basic-auth\/([^\/]+)\/([^\/]+)$/);
@@ -34,5 +35,11 @@ const handle: HttpHandler = (req, res, { path }) => {
 
 export const basicAuth: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/basic-auth/{username}/{password}',
+        description: 'Challenges with HTTP Basic Auth, expecting the username & password from the URL. Returns 200 with user info on success, 401 if unauthenticated, 403 if wrong credentials.',
+        examples: ['/basic-auth/admin/secret'],
+        group: httpAuthentication
+    }
 };

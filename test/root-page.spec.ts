@@ -19,24 +19,27 @@ describe("Root page endpoint", () => {
         await server.destroy();
     });
 
-    it("redirects to the source for direct requests", async () => {
+    it("returns documentation page for direct requests", async () => {
         const address = `http://localhost:${serverPort}/`;
-        const response = await fetch(address, {
-            redirect: 'manual'
-        });
+        const response = await fetch(address);
 
-        expect(response.status).to.equal(307);
-        expect(response.headers.get('location')).to.equal('https://github.com/httptoolkit/testserver/');
+        expect(response.status).to.equal(200);
+        expect(response.headers.get('content-type')).to.include('text/html');
+        const body = await response.text();
+        expect(body).to.include('Testserver');
+        expect(body).to.include('HTTP Endpoints');
+        expect(body).to.include('WebSocket Endpoints');
+        expect(body).to.include('TLS Endpoints');
     });
 
-    it("just returns a 404 for any other hostnames", async () => {
+    it("returns documentation page for prefixed hostnames too", async () => {
         const address = `http://http1.localhost:${serverPort}/`;
-        const response = await fetch(address, {
-            redirect: 'manual'
-        });
+        const response = await fetch(address);
 
-        expect(response.status).to.equal(404);
-        expect(await response.text()).to.equal('Could not match endpoint for / (http1)');
+        expect(response.status).to.equal(200);
+        expect(response.headers.get('content-type')).to.include('text/html');
+        const body = await response.text();
+        expect(body).to.include('Testserver');
     });
 
 });

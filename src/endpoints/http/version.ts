@@ -13,5 +13,10 @@ const handle: HttpHandler = (_req, res) => {
 
 export const versionJson: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/version',
+        description: 'Returns the server version hash as JSON.',
+        examples: ['/version']
+    }
 };

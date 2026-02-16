@@ -1,6 +1,7 @@
 import * as zlib from 'node:zlib';
 import { serializeJson } from '../../../util.js';
 import { HttpEndpoint, HttpHandler } from '../../http-index.js';
+import { httpContentEncoding } from '../../groups.js';
 
 // We pre-decode the data. Note that this differs from HTTPBin which returns
 // dynamic data here - for this reason, we use a subdirectory. Dynamic encoding
@@ -23,5 +24,11 @@ const handle: HttpHandler = (req, res) => {
 
 export const zstd: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/encoding/zstd',
+        description: 'Returns zstd-encoded JSON data.',
+        examples: ['/encoding/zstd'],
+        group: httpContentEncoding
+    }
 };

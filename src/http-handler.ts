@@ -7,6 +7,7 @@ import { httpEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
+import { getDocsHtml } from './docs-page.js';
 
 function stopRawDataCapture(req: HttpRequest): void {
     if (req.httpVersion === '2.0') {
@@ -92,16 +93,18 @@ function createHttpRequestHandler(options: {
             ? url.hostname.slice(0, -options.rootDomain.length - 1)
             : undefined;
 
-        if (path === '/' && (!hostnamePrefix || hostnamePrefix === 'www')) {
-            console.log(`Request to root page at ${path}${
-                hostnamePrefix
-                    ? ` ('${hostnamePrefix}' prefix)`
-                    : ` (${options.rootDomain})`
-            }`);
-            res.writeHead(307, {
-                location: 'https://github.com/httptoolkit/testserver/'
+        // Serve docs at root path for all prefixes except 'example' which has its own root handler
+        const endpointPrefixes = ['example'];
+        const isEndpointPrefix = hostnamePrefix && endpointPrefixes.includes(hostnamePrefix);
+
+        if (path === '/' && !isEndpointPrefix) {
+            console.log(`Request to root page at ${path} (${hostnamePrefix || options.rootDomain})`);
+            const html = getDocsHtml();
+            res.writeHead(200, {
+                'content-type': 'text/html; charset=utf-8',
+                'content-length': Buffer.byteLength(html)
             });
-            res.end();
+            res.end(html);
             return;
         }
 

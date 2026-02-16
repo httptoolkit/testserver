@@ -1,4 +1,5 @@
 import { serializeJson } from '../../util.js';
+import { httpContentExamples } from '../groups.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) => path === '/json';
@@ -34,5 +35,11 @@ const handle: HttpHandler = (req, res) => {
 
 export const json: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/json',
+        description: 'Returns a sample JSON document.',
+        examples: ['/json'],
+        group: httpContentExamples
+    }
 };

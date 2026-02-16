@@ -1,5 +1,6 @@
 import { delay, StatusError } from '@httptoolkit/util';
 import { WebSocketEndpoint } from '../ws-index.js';
+import { wsTiming } from '../groups.js';
 
 const getRemainingPath = (path: string): string | undefined => {
     const idx = path.indexOf('/', '/ws/delay/'.length);
@@ -26,5 +27,11 @@ export const wsDelayEndpoint: WebSocketEndpoint = {
         const delaySeconds = parseDelaySeconds(path);
         const cappedDelayMs = Math.min(delaySeconds, 10) * 1000;
         await delay(cappedDelayMs);
+    },
+    meta: {
+        path: '/ws/delay/{seconds}',
+        description: 'Delays WebSocket connection handling by the specified seconds (max 10). Can be chained with other WS endpoints.',
+        examples: ['/ws/delay/1/echo', '/ws/delay/5/close'],
+        group: wsTiming
     }
 };

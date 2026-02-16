@@ -1,6 +1,7 @@
 import * as tls from 'tls';
 import * as crypto from 'crypto';
 import { TlsEndpoint } from '../tls-index.js';
+import { tlsVersions } from '../groups.js';
 
 const {
     SSL_OP_NO_TLSv1,
@@ -51,6 +52,12 @@ export const tlsV1: TlsEndpoint = {
         enableTlsVersion(tlsOptions, 'TLSv1');
         return tlsOptions;
     },
+    meta: {
+        path: 'tls-v1-0',
+        description: 'Accepts only TLS 1.0 connections.',
+        examples: ['https://tls-v1-0.testserver.host/'],
+        group: tlsVersions
+    }
 };
 
 export const tlsV1_1: TlsEndpoint = {
@@ -59,6 +66,12 @@ export const tlsV1_1: TlsEndpoint = {
         enableTlsVersion(tlsOptions, 'TLSv1.1');
         return tlsOptions;
     },
+    meta: {
+        path: 'tls-v1-1',
+        description: 'Accepts only TLS 1.1 connections.',
+        examples: ['https://tls-v1-1.testserver.host/'],
+        group: tlsVersions
+    }
 };
 
 export const tlsV1_2: TlsEndpoint = {
@@ -67,6 +80,12 @@ export const tlsV1_2: TlsEndpoint = {
         enableTlsVersion(tlsOptions, 'TLSv1.2');
         return tlsOptions;
     },
+    meta: {
+        path: 'tls-v1-2',
+        description: 'Accepts only TLS 1.2 connections.',
+        examples: ['https://tls-v1-2.testserver.host/'],
+        group: tlsVersions
+    }
 };
 
 export const tlsV1_3: TlsEndpoint = {
@@ -75,4 +94,10 @@ export const tlsV1_3: TlsEndpoint = {
         enableTlsVersion(tlsOptions, 'TLSv1.3');
         return tlsOptions;
     },
+    meta: {
+        path: 'tls-v1-3',
+        description: 'Accepts only TLS 1.3 connections.',
+        examples: ['https://tls-v1-3.testserver.host/'],
+        group: tlsVersions
+    }
 };

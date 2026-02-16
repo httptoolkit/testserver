@@ -1,5 +1,6 @@
 import { StatusError } from '@httptoolkit/util';
 import { WebSocketEndpoint } from '../ws-index.js';
+import { wsConnection } from '../groups.js';
 
 const parseCloseCode = (path: string): number => {
     if (path === '/ws/close') return 1000;
@@ -19,5 +20,11 @@ export const wsCloseEndpoint: WebSocketEndpoint = {
         const code = parseCloseCode(path);
         const reason = query.get('reason') ?? undefined;
         ws.close(code, reason);
+    },
+    meta: {
+        path: '/ws/close/{code}',
+        description: 'Closes the WebSocket connection with the specified close code (1000-4999). Optional reason via query parameter.',
+        examples: ['/ws/close', '/ws/close/1001', '/ws/close/4000?reason=custom'],
+        group: wsConnection
     }
 };

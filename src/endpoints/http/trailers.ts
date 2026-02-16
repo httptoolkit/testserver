@@ -41,5 +41,10 @@ const handle: HttpHandler = async (req, res) => {
 
 export const trailers: HttpEndpoint = {
     matchPath,
-    handle
+    handle,
+    meta: {
+        path: '/trailers',
+        description: 'Tests HTTP trailers. Returns any received trailers and sends trailers back if the client indicated support via the TE header.',
+        examples: ['/trailers']
+    }
 };

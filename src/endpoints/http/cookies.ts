@@ -2,6 +2,7 @@ import * as Cookie from 'cookie';
 
 import { HttpEndpoint } from '../http-index.js';
 import { serializeJson } from '../../util.js';
+import { httpCookies } from '../groups.js';
 
 export const getCookies: HttpEndpoint = {
     matchPath: (path) => path === '/cookies',
@@ -9,6 +10,12 @@ export const getCookies: HttpEndpoint = {
         const cookies = Cookie.parse(req.headers.cookie || '');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(serializeJson({ cookies }));
+    },
+    meta: {
+        path: '/cookies',
+        description: 'Returns the cookies sent with the request.',
+        examples: ['/cookies'],
+        group: httpCookies
     }
 }
 
@@ -43,6 +50,12 @@ export const setCookies: HttpEndpoint = {
                 ];
             })).flat()
         ] as any).end(); // Any because H2 types don't include string array
+    },
+    meta: {
+        path: '/cookies/set',
+        description: 'Sets cookies via query parameters or path segments, then redirects to /cookies.',
+        examples: ['/cookies/set?name=value', '/cookies/set/name/value'],
+        group: httpCookies
     }
 }
 
@@ -58,5 +71,11 @@ export const deleteCookies: HttpEndpoint = {
                 `${key}=; Expires=Thu, 01-Jan-1970 00:00:00 GMT; Max-Age=0; Path=/`
             ]).flat()
         ] as any).end(); // Any because H2 types don't include string array
+    },
+    meta: {
+        path: '/cookies/delete',
+        description: 'Deletes cookies specified in query parameters, then redirects to /cookies.',
+        examples: ['/cookies/delete?name'],
+        group: httpCookies
     }
 }

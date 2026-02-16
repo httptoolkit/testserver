@@ -22,9 +22,15 @@ const methodHandler: HttpHandler = (req, res, { path }) => {
 export const getMethodEndpoint: HttpEndpoint = {
     matchPath: (path: string) => path.slice(1).toUpperCase() === 'GET',
     handle: methodHandler
+    // Meta defined on nonGetMethodEndpoint covers both
 };
 
 export const nonGetMethodEndpoint: HttpEndpoint = {
     matchPath: (path: string) => nonGetMethods.includes(path.slice(1).toUpperCase()),
-    handle: methodHandler
+    handle: methodHandler,
+    meta: {
+        path: '/{method}',
+        description: 'Returns request info for the specified HTTP method. Returns 405 if the request method does not match the path.',
+        examples: ['/get', '/post', '/put', '/patch', '/delete']
+    }
 }

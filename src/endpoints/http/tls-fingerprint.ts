@@ -42,5 +42,10 @@ export const tlsFingerprint: HttpEndpoint = {
             ja3: tlsClientHello.ja3,
             ja4: tlsClientHello.ja4
         }));
+    },
+    meta: {
+        path: '/tls/fingerprint',
+        description: 'Returns the TLS fingerprint (JA3 and JA4) of the client connection. Requires HTTPS.',
+        examples: ['/tls/fingerprint']
     }
 };

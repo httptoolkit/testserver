@@ -2,6 +2,9 @@ import { MaybePromise } from '@httptoolkit/util';
 import * as http from 'http';
 import * as http2 from 'http2';
 
+import { EndpointMeta, EndpointGroup } from './groups.js';
+export type { EndpointMeta, EndpointGroup };
+
 export type HttpRequest = http.IncomingMessage | http2.Http2ServerRequest;
 export type HttpResponse = http.ServerResponse | http2.Http2ServerResponse;
 
@@ -19,6 +22,7 @@ export interface HttpEndpoint {
     handle: HttpHandler;
     needsRawData?: boolean;
     getRemainingPath?: (path: string) => string | undefined;
+    meta?: EndpointMeta;
 }
 
 export * from './http/echo.js';

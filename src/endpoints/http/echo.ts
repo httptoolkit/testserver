@@ -162,5 +162,10 @@ async function handle(req: HttpRequest, res: HttpResponse) {
 export const echo: HttpEndpoint = {
     matchPath,
     handle,
-    needsRawData: true
+    needsRawData: true,
+    meta: {
+        path: '/echo',
+        description: 'Echoes back the raw HTTP request data. For HTTP/2, returns parsed frame data as JSON lines.',
+        examples: ['/echo']
+    }
 }
