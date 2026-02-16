@@ -159,7 +159,12 @@ function isRevokedCert(cert: x509.X509Certificate): boolean {
 
     for (const name of sanExt.names.items) {
         if (name.type === 'dns') {
-            const parts = (name.value as string).split('.');
+            const dnsName = name.value as string;
+            const labels = dnsName.split('.');
+            // Use -- within a single label, or . between labels, not both
+            const parts = labels.some(l => l.includes('--'))
+                ? labels.flatMap(l => l.split('--'))
+                : labels;
             if (parts.includes('revoked')) return true;
         }
     }

@@ -15,6 +15,8 @@ import { ConnectionProcessor } from './process-connection.js';
 import { AcmeCA, AcmeProvider } from './tls-certificates/acme.js';
 import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
+import { DnsServer } from './dns-server.js';
+import { tlsEndpoints } from './endpoints/endpoint-index.js';
 
 declare module 'stream' {
     interface Duplex {
@@ -38,6 +40,13 @@ interface ServerOptions {
     certCacheDir?: string;
     localCaKey?: string;
     localCaCert?: string;
+    dnsServer?: boolean;
+}
+
+function isWildcardCoverable(domain: string, rootDomain: string): boolean {
+    if (!domain.endsWith(`.${rootDomain}`)) return false;
+    const prefix = domain.slice(0, -rootDomain.length - 1);
+    return !prefix.includes('.'); // Single-level subdomain only
 }
 
 async function generateTlsConfig(options: ServerOptions) {
@@ -58,7 +67,20 @@ async function generateTlsConfig(options: ServerOptions) {
     }
 
     if (certCache) {
-        await certCache.loadCache();
+        const validSniParts = new Set(tlsEndpoints.map(e => e.sniPart));
+        await certCache.loadCache((domain) => { // Temp logic to clean up old cached certs
+            // Root domain and wildcard are always valid
+            if (domain === rootDomain || domain === `*.${rootDomain}`) return true;
+
+            // Strip root domain suffix to get the prefix
+            if (!domain.endsWith(`.${rootDomain}`)) return false;
+            const prefix = domain.slice(0, -rootDomain.length - 1);
+            if (!prefix) return false;
+
+            // Split by -- or . (same logic as getSNIPrefixParts)
+            const parts = prefix.includes('--') ? prefix.split('--') : prefix.split('.');
+            return parts.every(part => validSniParts.has(part));
+        });
     }
 
     const localCA = await LocalCA.create(caCert);
@@ -95,7 +117,17 @@ async function generateTlsConfig(options: ServerOptions) {
         throw new Error(`Can't enable ACME without configuring an account key (via $ACME_ACCOUNT_KEY)`);
     }
 
-    const acmeCA = new AcmeCA(certCache!, options.acmeProvider, options.acmeAccountKey);
+    // Set up in-process DNS server for wildcard certs via DNS-01 (optional)
+    let dnsServer: DnsServer | undefined;
+
+    if (options.dnsServer) {
+        // Fly.io requires UDP to bind to 'fly-global-services' instead of 0.0.0.0
+        const dnsBindAddress = process.env.FLY_APP_NAME ? 'fly-global-services' : '0.0.0.0';
+        dnsServer = new DnsServer(53, dnsBindAddress);
+        await dnsServer.listen();
+    }
+
+    const acmeCA = new AcmeCA(certCache!, options.acmeProvider, options.acmeAccountKey, dnsServer);
     acmeCA.tryGetCertificateSync(rootDomain, {}); // Preload the root domain every time
 
     return {
@@ -105,22 +137,29 @@ async function generateTlsConfig(options: ServerOptions) {
         cert: defaultCert.cert,
         ca: caCert.cert,
         localCA,
-        generateCertificate: async (domain: string, options: CertOptions) => {
-            if (options.requiredType === 'local') {
-                return await localCA.generateCertificate(domain, options);
+        generateCertificate: async (domain: string, certOptions: CertOptions) => {
+            if (certOptions.requiredType === 'local') {
+                return await localCA.generateCertificate(domain, certOptions);
             }
 
-            const cert = acmeCA.tryGetCertificateSync(domain, options);
+            // Use wildcard when: DNS server available, single-level subdomain, no overridePrefix
+            const useWildcard = dnsServer
+                && isWildcardCoverable(domain, rootDomain)
+                && !certOptions.overridePrefix;
+
+            const effectiveDomain = useWildcard ? `*.${rootDomain}` : domain;
+
+            const cert = acmeCA.tryGetCertificateSync(effectiveDomain, certOptions);
 
             if (cert) {
                 return cert;
             } else {
-                if (options.requiredType === 'acme') {
-                    return await acmeCA.waitForCertificate(domain, options);
+                if (certOptions.requiredType === 'acme') {
+                    return await acmeCA.waitForCertificate(effectiveDomain, certOptions);
                 }
                 // Local CA fallback while ACME cert is pending - mark as temporary
                 // so it gets a short cache time and ACME cert is used once available
-                const fallbackCert = await localCA.generateCertificate(domain, options);
+                const fallbackCert = await localCA.generateCertificate(domain, certOptions);
                 return { ...fallbackCert, isTemporary: true };
             }
         },
@@ -193,7 +232,8 @@ if (wasRunDirectly) {
         acmeAccountKey: process.env.ACME_ACCOUNT_KEY,
         certCacheDir: process.env.CERT_CACHE_DIR,
         localCaKey: process.env.LOCAL_CA_KEY,
-        localCaCert: process.env.LOCAL_CA_CERT
+        localCaCert: process.env.LOCAL_CA_CERT,
+        dnsServer: process.env.DNS_SERVER === 'true'
     }).then((tcpHandler) => {
         ports.forEach((port) => {
             const server = createTcpServer(tcpHandler);

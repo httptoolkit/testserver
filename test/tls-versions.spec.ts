@@ -182,6 +182,29 @@ describe("TLS version endpoints", () => {
         expect(result).to.have.property('alpn', 'h2');
     });
 
+    it("supports -- separator for TLS version with ALPN", async () => {
+        const conn = tls.connect({
+            host: '127.0.0.1',
+            port: serverPort,
+            servername: 'http2--tls-v1-2.localhost',
+            maxVersion: 'TLSv1.2',
+            ALPNProtocols: ['h2', 'http/1.1'],
+            rejectUnauthorized: false
+        });
+
+        const result = await new Promise<{ version: string, alpn: string | false | null } | { error: string }>((resolve) => {
+            conn.on('secureConnect', () => resolve({
+                version: conn.getProtocol()!,
+                alpn: conn.alpnProtocol
+            }));
+            conn.on('error', (err) => resolve({ error: err.message }));
+        });
+        conn.destroy();
+
+        expect(result).to.have.property('version', 'TLSv1.2');
+        expect(result).to.have.property('alpn', 'h2');
+    });
+
     describe("version ranges", () => {
 
         it("accepts TLS 1.2 on tls-v1-2.tls-v1-3.* (contiguous range)", async () => {
@@ -310,6 +333,25 @@ describe("TLS version endpoints", () => {
                 host: '127.0.0.1',
                 port: serverPort,
                 servername: 'tls-v1-3.tls-v1-2.localhost',
+                minVersion: 'TLSv1.2',
+                maxVersion: 'TLSv1.2',
+                rejectUnauthorized: false
+            });
+
+            const result = await new Promise<{ version: string } | { error: string }>((resolve) => {
+                conn.on('secureConnect', () => resolve({ version: conn.getProtocol()! }));
+                conn.on('error', (err) => resolve({ error: err.message }));
+            });
+            conn.destroy();
+
+            expect(result).to.have.property('version', 'TLSv1.2');
+        });
+
+        it("supports -- separator for version ranges", async () => {
+            const conn = tls.connect({
+                host: '127.0.0.1',
+                port: serverPort,
+                servername: 'tls-v1-2--tls-v1-3.localhost',
                 minVersion: 'TLSv1.2',
                 maxVersion: 'TLSv1.2',
                 rejectUnauthorized: false

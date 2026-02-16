@@ -3,9 +3,9 @@ import * as ACME from 'acme-client';
 
 import { PersistentCertCache } from './cert-cache.js';
 import { CertOptions, calculateCertCacheKey } from './cert-definitions.js';
+import { DnsServer } from '../dns-server.js';
 
-const ONE_MINUTE = 1000 * 60;
-const ONE_DAY = ONE_MINUTE * 60 * 24;
+const ONE_DAY = 1000 * 60 * 60 * 24;
 const PROACTIVE_REFRESH_TIME = ONE_DAY * 14;
 
 interface AcmeGeneratedCertificate {
@@ -29,7 +29,8 @@ export class AcmeCA {
     constructor(
         private certCache: PersistentCertCache,
         private acmeProvider: AcmeProvider,
-        accountKey: string
+        accountKey: string,
+        private dnsServer?: DnsServer
     ) {
         if (!SUPPORTED_ACME_PROVIDERS.includes(acmeProvider)) {
             throw new Error(`Unsupported ACME provider: ${acmeProvider}`);
@@ -66,7 +67,7 @@ export class AcmeCA {
 
         if (cachedCert) {
             console.log(`Found cached cert for ${cacheKey} (hash:${crypto.hash('sha256', cachedCert.cert)}, expiry: ${new Date(cachedCert.expiry).toISOString()})`);
-        
+
             if (certOptions.expired) {
                 const isExpired = cachedCert.expiry <= Date.now();
                 console.log(`Found cached expired-mode cert for ${cacheKey} (expiry: ${new Date(cachedCert.expiry).toISOString()}, actually expired: ${isExpired})`);
@@ -157,11 +158,9 @@ export class AcmeCA {
             return this.pendingCertRenewals[cacheKey]!;
         }
 
-        const requestCert = certOptions.expired && this.acmeProvider === 'google'
-            ? this.requestShortLivedCertificate.bind(this)
-            : this.requestNewCertificate.bind(this);
+        const shortLived = certOptions.expired && this.acmeProvider === 'google';
 
-        const refreshPromise = Object.assign(requestCert(domain, { attemptId })
+        const refreshPromise = Object.assign(this.requestCertificate(domain, { attemptId, shortLived })
         .then(async (certData): Promise<AcmeGeneratedCertificate> => {
             if (
                 this.pendingCertRenewals[cacheKey] &&
@@ -194,92 +193,110 @@ export class AcmeCA {
         return refreshPromise;
     }
 
-    private async requestNewCertificate(domain: string, options: { attemptId: string }): Promise<AcmeGeneratedCertificate> {
-        console.log(`Requesting new certificate for ${domain} (${options.attemptId})`);
-
-        const [key, csr] = await ACME.crypto.createCsr({
-            commonName: domain
-        });
-
-        const cert = await this.acmeClient.auto({
-            csr,
-            challengePriority: ['http-01'],
-            termsOfServiceAgreed: true,
-            email: 'contact@' + domain,
-            skipChallengeVerification: true,
-            challengeCreateFn: async () => {
-                // Challenge responses are stateless - getChallengeResponse() computes
-                // the key authorization directly from the token
-            },
-            challengeRemoveFn: async () => {}
-        });
-
-        console.log(`Successfully ACMEd new certificate for ${domain} (${options.attemptId})`);
-
-        return {
-            key: key.toString(),
-            cert,
-            expiry: (new Date(ACME.crypto.readCertificateInfo(cert).notAfter)).valueOf()
-        };
-    }
-
     /**
-     * Request a short-lived certificate (1 day validity) using the lower-level ACME API.
-     * Google Trust Services supports validity periods as short as 1 day.
+     * Request a certificate from ACME. Handles all combinations:
+     * - Normal or wildcard (*.domain) via HTTP-01 or DNS-01 challenges
+     * - Normal or short-lived validity (1-day, for Google Trust Services `expired` mode)
      */
-    private async requestShortLivedCertificate(domain: string, options: { attemptId: string }): Promise<AcmeGeneratedCertificate> {
-        console.log(`Requesting short-lived certificate for ${domain} (${options.attemptId})`);
+    private async requestCertificate(
+        domain: string,
+        options: { attemptId: string, shortLived?: boolean }
+    ): Promise<AcmeGeneratedCertificate> {
+        const { attemptId, shortLived } = options;
+        const isWildcard = domain.startsWith('*.') && !!this.dnsServer;
+        const rootDomain = isWildcard ? domain.slice(2) : domain;
+        const contactEmail = `contact@${rootDomain}`;
+        const label = `${shortLived ? 'short-lived ' : ''}${isWildcard ? 'wildcard ' : ''}`;
 
-        const [key, csr] = await ACME.crypto.createCsr({
-            commonName: domain
-        });
+        console.log(`Requesting ${label}certificate for ${domain} (${attemptId})`);
 
-        // Ensure account exists
-        await this.acmeClient.createAccount({
-            termsOfServiceAgreed: true,
-            contact: [`mailto:contact@${domain}`]
-        });
+        const [key, csr] = await ACME.crypto.createCsr(isWildcard
+            ? { commonName: rootDomain, altNames: [domain, rootDomain] }
+            : { commonName: domain }
+        );
 
-        // Create order with 1-day validity
-        const notBefore = new Date();
-        const notAfter = new Date(Date.now() + ONE_DAY);
+        let cert: string;
 
-        console.log(`Creating order with validity: ${notBefore.toISOString()} to ${notAfter.toISOString()} (${options.attemptId})`);
+        if (shortLived) {
+            // Short-lived: use lower-level API to set custom notBefore/notAfter
+            await this.acmeClient.createAccount({
+                termsOfServiceAgreed: true,
+                contact: [`mailto:${contactEmail}`]
+            });
 
-        const order = await this.acmeClient.createOrder({
-            identifiers: [{ type: 'dns', value: domain }],
-            notBefore: notBefore.toISOString(),
-            notAfter: notAfter.toISOString()
-        });
+            const notBefore = new Date();
+            const notAfter = new Date(Date.now() + ONE_DAY);
+            console.log(`Creating order with validity: ${notBefore.toISOString()} to ${notAfter.toISOString()} (${attemptId})`);
 
-        // Get and complete authorizations
-        const authorizations = await this.acmeClient.getAuthorizations(order);
-        console.log(`Got ${authorizations.length} authorizations for ${domain} (${options.attemptId})`);
+            const identifiers = isWildcard
+                ? [{ type: 'dns' as const, value: domain }, { type: 'dns' as const, value: rootDomain }]
+                : [{ type: 'dns' as const, value: domain }];
 
-        for (const authz of authorizations) {
-            if (authz.status === 'valid') {
-                console.log(`Authorization already valid for ${authz.identifier.value} (${options.attemptId})`);
-                continue;
+            const order = await this.acmeClient.createOrder({
+                identifiers,
+                notBefore: notBefore.toISOString(),
+                notAfter: notAfter.toISOString()
+            });
+
+            const authorizations = await this.acmeClient.getAuthorizations(order);
+            console.log(`Got ${authorizations.length} authorizations for ${domain} (${attemptId})`);
+
+            for (const authz of authorizations) {
+                if (authz.status === 'valid') {
+                    console.log(`Authorization already valid for ${authz.identifier.value} (${attemptId})`);
+                    continue;
+                }
+
+                if (isWildcard) {
+                    const challenge = authz.challenges.find(c => c.type === 'dns-01');
+                    if (!challenge) throw new Error(`No dns-01 challenge found for ${authz.identifier.value} (${attemptId})`);
+
+                    const keyAuthorization = await this.acmeClient.getChallengeKeyAuthorization(challenge);
+                    const fqdn = `_acme-challenge.${authz.identifier.value}`;
+
+                    console.log(`Completing dns-01 challenge for ${authz.identifier.value} (${attemptId})`);
+                    this.dnsServer!.setTxtRecord(fqdn, keyAuthorization);
+                    await this.acmeClient.completeChallenge(challenge);
+                    await this.acmeClient.waitForValidStatus(challenge);
+                    this.dnsServer!.removeTxtRecord(fqdn, keyAuthorization);
+                } else {
+                    const challenge = authz.challenges.find(c => c.type === 'http-01');
+                    if (!challenge) throw new Error(`No http-01 challenge found for ${authz.identifier.value} (${attemptId})`);
+
+                    console.log(`Completing http-01 challenge for ${authz.identifier.value} (${attemptId})`);
+                    await this.acmeClient.completeChallenge(challenge);
+                    await this.acmeClient.waitForValidStatus(challenge);
+                }
             }
 
-            // Find http-01 challenge
-            const challenge = authz.challenges.find(c => c.type === 'http-01');
-            if (!challenge) {
-                throw new Error(`No http-01 challenge found for ${authz.identifier.value} (${options.attemptId})`);
-            }
-
-            // Complete challenge - response is stateless via getChallengeResponse()
-            console.log(`Completing http-01 challenge for ${authz.identifier.value} (${options.attemptId})`);
-            await this.acmeClient.completeChallenge(challenge);
-            await this.acmeClient.waitForValidStatus(challenge);
+            console.log(`Finalizing order for ${domain} (${attemptId})`);
+            const finalized = await this.acmeClient.finalizeOrder(order, csr);
+            cert = await this.acmeClient.getCertificate(finalized);
+        } else {
+            // Normal validity: use auto() which handles the full ACME flow
+            cert = await this.acmeClient.auto({
+                csr,
+                challengePriority: [isWildcard ? 'dns-01' : 'http-01'],
+                termsOfServiceAgreed: true,
+                email: contactEmail,
+                skipChallengeVerification: true,
+                challengeCreateFn: isWildcard
+                    ? async (_authz, _challenge, keyAuthorization) => {
+                        this.dnsServer!.setTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
+                    }
+                    : async () => {
+                        // HTTP-01 challenge responses are stateless - getChallengeResponse()
+                        // computes the key authorization directly from the token
+                    },
+                challengeRemoveFn: isWildcard
+                    ? async (_authz, _challenge, keyAuthorization) => {
+                        this.dnsServer!.removeTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
+                    }
+                    : async () => {}
+            });
         }
 
-        // Finalize order and get certificate
-        console.log(`Finalizing order for ${domain} (${options.attemptId})`);
-        const finalized = await this.acmeClient.finalizeOrder(order, csr);
-        const cert = await this.acmeClient.getCertificate(finalized);
-
-        console.log(`Successfully issued short-lived certificate for ${domain} (${options.attemptId})`);
+        console.log(`Successfully issued ${label}certificate for ${domain} (${attemptId})`);
 
         return {
             key: key.toString(),

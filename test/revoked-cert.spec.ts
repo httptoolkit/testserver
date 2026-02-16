@@ -180,4 +180,24 @@ describe("Revoked certificate endpoint", () => {
         expect(result).to.be.true;
     });
 
+    it("supports -- separator for revoked with protocol preferences", async () => {
+        const result = await new Promise<boolean>((resolve, reject) => {
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'http1--revoked.localhost',
+                rejectUnauthorized: false,
+                ALPNProtocols: ['http/1.1', 'h2']
+            }, () => {
+                const protocol = socket.alpnProtocol;
+                socket.end();
+                resolve(protocol === 'http/1.1');
+            });
+
+            socket.on('error', reject);
+        });
+
+        expect(result).to.be.true;
+    });
+
 });

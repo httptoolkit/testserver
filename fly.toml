@@ -12,10 +12,13 @@ primary_region = 'cdg'
 
   # If deploying a separate instance and wanting real certificates, customize these:
   ROOT_DOMAIN = 'testserver.host'
-  PROACTIVE_CERT_DOMAINS = 'testserver.host,example.testserver.host,http1.testserver.host,http2.testserver.host'
+  PROACTIVE_CERT_DOMAINS = 'testserver.host,example.testserver.host,revoked.testserver.host,expired.testserver.host,expired--revoked.testserver.host'
 
   ACME_PROVIDER = 'google' # or 'letsencrypt', 'zerossl'
   # Set ACME_ACCOUNT_KEY secret (PEM format) - see src/tls-certificates/acme.ts for details
+
+  # Enable in-process DNS server on port 53 for wildcard certs via DNS-01 (requires NS delegation)
+  DNS_SERVER = 'true'
 
 [[services]]
   protocol = "tcp"
@@ -39,6 +42,14 @@ primary_region = 'cdg'
     timeout = 2000
     tls_server_name = "testserver.host"
     tls_skip_verify = true # We don't verify by default, so this works for fresh empty-volume deploys
+
+# DNS server
+[[services]]
+  protocol = "udp"
+  internal_port = 53
+
+  [[services.ports]]
+    port = 53
 
 # If we want to scale out within a single region, where there's already an app in the same region
 # using this volume, we need to fork it and create another with the same name.

@@ -58,6 +58,11 @@ const getSNIPrefixParts = (servername: string, rootDomain: string) => {
         : servername;
 
     if (serverNamePrefix === '') return [];
+
+    // Support both -- (preferred, single-level subdomain) and . (legacy, multi-level)
+    if (serverNamePrefix.includes('--')) {
+        return serverNamePrefix.split('--');
+    }
     return serverNamePrefix.split('.');
 };
 

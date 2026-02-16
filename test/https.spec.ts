@@ -117,6 +117,23 @@ Connection: keep-alive
         expect(selectedProtocol).to.equal('h2');
     });
 
+    it("supports -- separator for SNI parts", async () => {
+        const conn = tls.connect({
+            port: serverPort,
+            servername: 'http2--http1.localhost',
+            ALPNProtocols: ['http/1.1', 'h2'],
+            rejectUnauthorized: false
+        });
+
+        const selectedProtocol = await new Promise<any>((resolve, reject) => {
+            conn.on('secureConnect', () => resolve(conn.alpnProtocol));
+            conn.on('error', reject);
+        });
+        conn.destroy();
+
+        expect(selectedProtocol).to.equal('h2');
+    });
+
     it("overrides client ALPN preference if no preference is shown, unless forced", async () => {
         await Promise.all([
             { protocols: ['h2', 'http/1.1'], expected: 'http/1.1' },
@@ -192,6 +209,24 @@ Connection: keep-alive
             expect(protocol).to.equal('h2');
         });
 
+        it("supports -- separator for wrong-host with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2--wrong-host.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal('example.localhost');
+            expect(protocol).to.equal('h2');
+        });
+
     });
 
     describe("self-signed certificates", () => {
@@ -232,6 +267,24 @@ Connection: keep-alive
             expect(protocol).to.equal('h2');
         });
 
+        it("supports -- separator for self-signed with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2--self-signed.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(cert.subject.CN).to.equal(cert.issuer.CN);
+            expect(protocol).to.equal('h2');
+        });
+
     });
 
     describe("expired certificates", () => {
@@ -258,6 +311,24 @@ Connection: keep-alive
             const conn = tls.connect({
                 port: serverPort,
                 servername: 'http2.expired.localhost',
+                ALPNProtocols: ['http/1.1', 'h2'],
+                rejectUnauthorized: false
+            });
+
+            const [cert, protocol] = await new Promise<[tls.PeerCertificate, string | false | null]>((resolve, reject) => {
+                conn.on('secureConnect', () => resolve([conn.getPeerCertificate(), conn.alpnProtocol]));
+                conn.on('error', reject);
+            });
+            conn.destroy();
+
+            expect(new Date(cert.valid_to).getTime()).to.be.lessThan(Date.now());
+            expect(protocol).to.equal('h2');
+        });
+
+        it("supports -- separator for expired with protocol preferences", async () => {
+            const conn = tls.connect({
+                port: serverPort,
+                servername: 'http2--expired.localhost',
                 ALPNProtocols: ['http/1.1', 'h2'],
                 rejectUnauthorized: false
             });

@@ -37,6 +37,7 @@
     "@peculiar/x509": "^1.14.3",
     "acme-client": "^5.4.0",
     "cookie": "^1.0.2",
+    "dns-packet": "^5.6.1",
     "lodash": "^4.17.23",
     "parse-multipart-data": "^1.5.0",
     "read-tls-client-hello": "^1.1.0",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@types/chai": "^4.3.14",
+    "@types/dns-packet": "^5.6.5",
     "@types/lodash": "^4.17.0",
     "@types/mocha": "^10.0.6",
     "@types/node": "^22.15.30",

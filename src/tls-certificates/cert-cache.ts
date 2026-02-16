@@ -18,7 +18,12 @@ export class PersistentCertCache {
 
     cache: { [cacheKey: string]: CachedCertificate | undefined } = {};
 
-    async loadCache() {
+    private cacheKeyToFilename(cacheKey: string): string {
+        const hash = crypto.hash('sha256', cacheKey, 'hex').slice(0, 16);
+        return `${hash}.cert.json`;
+    }
+
+    async loadCache(isValidDomain?: (domain: string) => boolean) {
         const certFiles = await fs.readdir(this.certCacheDir)
             .catch(async (err): Promise<string[]> => {
                 if (err.code === 'ENOENT') {
@@ -60,6 +65,21 @@ export class PersistentCertCache {
                 // support the domain as the key anyway, so that's OK).
                 const cacheKey = data.cacheKey || data.domain;
 
+                // Delete certs for domains that are no longer valid
+                if (isValidDomain && !isValidDomain(data.domain)) {
+                    await fs.unlink(certPath);
+                    console.log(`Deleted cached cert for invalid domain: ${data.domain}`);
+                    return;
+                }
+
+                // Migrate old-style filenames (raw cacheKey) to hashed filenames
+                const expectedFilename = this.cacheKeyToFilename(cacheKey);
+                if (certName !== expectedFilename) {
+                    const newPath = path.join(this.certCacheDir, expectedFilename);
+                    await fs.rename(certPath, newPath);
+                    console.log(`Migrated cached cert ${certName} -> ${expectedFilename}`);
+                }
+
                 console.log(`Loaded cached cert for ${cacheKey}`);
 
                 this.cache[cacheKey] = data;
@@ -73,7 +93,7 @@ export class PersistentCertCache {
         this.cache[cert.cacheKey] = cert;
 
         fs.writeFile(
-            path.join(this.certCacheDir, `${cert.cacheKey}.cert.json`),
+            path.join(this.certCacheDir, this.cacheKeyToFilename(cert.cacheKey)),
             JSON.stringify(cert)
         ).catch((e) => {
             console.warn(`Failed to cache to disk certificate data for ${cert.cacheKey}`);
