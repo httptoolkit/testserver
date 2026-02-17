@@ -8,6 +8,7 @@ primary_region = 'cdg'
 
 [env]
   PORTS = '8080'
+  TRUST_PROXY_PROTOCOL = 'true'
   CERT_CACHE_DIR = '/usr/src/app/cert_dir'
 
   # If deploying a separate instance and wanting real certificates, customize these:
@@ -23,6 +24,9 @@ primary_region = 'cdg'
 [[services]]
   protocol = "tcp"
   internal = 8080
+
+  [services.proxy_proto_options]
+    version = "v1"
 
   [[services.ports]]
     port = "80"
