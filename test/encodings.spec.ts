@@ -45,7 +45,11 @@ describe('Encoding Endpoints', () => {
     ];
 
     testCases.forEach(({ name, encodingName, expectedJson }) => {
-        it(`/encoding/${name} should return decodeable content`, async () => {
+        const needsNode24 = name === 'zstd';
+        const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+
+        it(`/encoding/${name} should return decodeable content`, async function () {
+            if (needsNode24 && nodeMajor < 24) return this.skip();
             const url = `http://localhost:${serverPort}/encoding/${name}`;
             const response = await fetch(url);
 
