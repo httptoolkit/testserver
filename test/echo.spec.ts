@@ -1,10 +1,17 @@
 import * as net from 'net';
+import * as http from 'http';
 import * as tls from 'tls';
 import * as http2 from 'http2';
+import * as streamConsumers from 'stream/consumers';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
 import { createServer } from '../src/server.js';
+import {
+    buildProxyV1Header,
+    buildProxyV2Header,
+    createProxySocket
+} from './test-helpers.js';
 
 describe("Echo endpoint", () => {
 
@@ -290,6 +297,73 @@ accept-encoding: gzip, deflate
             // Echo should work and return the raw request
             expect(response2).to.include('HTTP/1.1 200');
             expect(response2).to.include('GET /echo HTTP/1.1');
+        });
+
+    });
+
+    describe("PROXY protocol", () => {
+
+        // These tests need their own server with trustProxyProtocol enabled
+        let proxyServer: DestroyableServer;
+        let proxyServerPort: number;
+
+        beforeEach(async () => {
+            proxyServer = makeDestroyable(await createServer({
+                domain: 'localhost',
+                trustProxyProtocol: true
+            }));
+            await new Promise<void>((resolve) => proxyServer.listen(resolve));
+            proxyServerPort = (proxyServer.address() as net.AddressInfo).port;
+        });
+
+        afterEach(async () => {
+            await proxyServer.destroy();
+        });
+
+        it("does not include PROXY v1 header in echoed HTTP/1.1 output", async () => {
+            const socket = await createProxySocket(proxyServerPort,
+                buildProxyV1Header('203.0.113.50', '10.0.0.1', 54321, 80)
+            );
+
+            const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+                const req = http.request({
+                    createConnection: () => socket,
+                    hostname: 'localhost',
+                    port: proxyServerPort,
+                    path: '/echo',
+                    headers: { 'Connection': 'close' }
+                }, resolve);
+                req.on('error', reject);
+                req.end();
+            });
+
+            expect(res.statusCode).to.equal(200);
+            const body = (await streamConsumers.buffer(res)).toString();
+
+            expect(body).to.match(/^GET \/echo HTTP\/1\.1/);
+        });
+
+        it("does not include PROXY v2 header in echoed HTTP/1.1 output", async () => {
+            const socket = await createProxySocket(proxyServerPort,
+                buildProxyV2Header('198.51.100.25', '10.0.0.1', 12345, 80)
+            );
+
+            const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+                const req = http.request({
+                    createConnection: () => socket,
+                    hostname: 'localhost',
+                    port: proxyServerPort,
+                    path: '/echo',
+                    headers: { 'Connection': 'close' }
+                }, resolve);
+                req.on('error', reject);
+                req.end();
+            });
+
+            expect(res.statusCode).to.equal(200);
+            const body = (await streamConsumers.buffer(res)).toString();
+
+            expect(body).to.match(/^GET \/echo HTTP\/1\.1/);
         });
 
     });

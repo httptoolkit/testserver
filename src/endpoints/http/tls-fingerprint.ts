@@ -1,5 +1,6 @@
 import { TLSSocket } from 'tls';
 import { HttpEndpoint, HttpRequest } from '../http-index.js';
+import { TLS_CLIENT_HELLO } from '../../tls-client-hello.js';
 
 function getTlsSocket(req: HttpRequest): TLSSocket | undefined {
     // HTTP/1: socket is directly available
@@ -29,9 +30,9 @@ export const tlsFingerprint: HttpEndpoint = {
             return;
         }
 
-        const tlsClientHello = (tlsSocket as any).tlsClientHello;
+        const helloData = tlsSocket[TLS_CLIENT_HELLO];
 
-        if (!tlsClientHello?.ja3 || !tlsClientHello?.ja4) {
+        if (!helloData?.ja3 || !helloData?.ja4) {
             res.writeHead(500, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: 'TLS fingerprint not available' }));
             return;
@@ -39,8 +40,8 @@ export const tlsFingerprint: HttpEndpoint = {
 
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({
-            ja3: tlsClientHello.ja3,
-            ja4: tlsClientHello.ja4
+            ja3: helloData.ja3,
+            ja4: helloData.ja4
         }));
     },
     meta: {

@@ -1,12 +1,35 @@
 import _ from 'lodash';
+import * as stream from 'stream';
 import * as streamConsumers from 'stream/consumers';
 
 import * as querystring from 'querystring';
 import * as multipart from 'parse-multipart-data';
 
+import * as http2 from 'http2';
 import { TLSSocket } from 'tls';
 import { serializeJson } from './util.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
+import { PROXY_PROTOCOL, type ProxyProtocolData } from './proxy-protocol.js';
+
+interface OriginSocket {
+    remoteAddress?: string;
+    [PROXY_PROTOCOL]?: ProxyProtocolData;
+}
+
+// Get the underlying connection socket for a request. For HTTP/1, req.socket is the real socket.
+// For HTTP/2, Node wraps non-Socket streams (like our DataCapturingStream) in a JSStreamSocket.
+// JSStreamSocket doesn't expose remoteAddress or custom symbol properties, but its .stream
+// property points back to our original DataCapturingStream which has both.
+function getConnectionSocket(req: HttpRequest): OriginSocket {
+    if (req.httpVersion === '2.0') {
+        const sessionSocket = (req as http2.Http2ServerRequest).stream?.session?.socket;
+        // JSStreamSocket (internal Node class) stores the wrapped stream as .stream
+        const innerStream = (sessionSocket as typeof sessionSocket & { stream?: stream.Duplex })?.stream;
+        if (innerStream) return innerStream as stream.Duplex & OriginSocket;
+        if (sessionSocket) return sessionSocket;
+    }
+    return req.socket;
+}
 
 const utf8Decoder = new TextDecoder('utf8', { fatal: true });
 
@@ -77,9 +100,13 @@ export const buildHttpBinAnythingEndpoint = (options: {
 
     const contentType = req.headers['content-type'];
 
-    // For HTTP/2 over wrapped streams, remoteAddress is on .stream (the underlying wrapper)
-    const origin = (req.socket.remoteAddress ?? (req.socket as any).stream?.remoteAddress)
-        ?.replace(/^::ffff:/, ''); // Drop IPv6 wrapper of IPv4 addresses
+    // Get client IP - prefer PROXY protocol data if available, fall back to socket address.
+    // The PROXY_PROTOCOL symbol is propagated through TLS and HTTP/2 wrapper layers.
+    const socket = getConnectionSocket(req);
+    const rawOrigin = socket[PROXY_PROTOCOL]?.sourceAddress
+        ?? socket.remoteAddress;
+
+    const origin = rawOrigin?.replace(/^::ffff:/, ''); // Drop IPv6 wrapper of IPv4 addresses
 
     let result: {} = {
         args: getUrlArgs(url),

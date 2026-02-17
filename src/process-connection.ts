@@ -1,6 +1,12 @@
 import * as stream from 'stream';
 import * as http from 'http';
 
+import {
+    PROXY_PROTOCOL,
+    parseProxyProtocol,
+    detectProxyProtocol,
+} from './proxy-protocol.js';
+
 const FRAME_HEADER_SIZE = 9;
 
 interface ParsedFrameHeader {
@@ -46,6 +52,7 @@ class DataCapturingStream extends stream.Duplex {
         this.remotePort = (wrapped as any).remotePort;
         this.localAddress = (wrapped as any).localAddress;
         this.localPort = (wrapped as any).localPort;
+        this[PROXY_PROTOCOL] = wrapped[PROXY_PROTOCOL];
 
         wrapped.on('error', (err) => this.emit('error', err));
         wrapped.on('close', () => this.emit('close'));
@@ -226,18 +233,96 @@ export class ConnectionProcessor {
     constructor(
         private tlsHandler: ConnectionHandler,
         private httpHandler: ConnectionHandler,
-        private http2Handler: ConnectionHandler
+        private http2Handler: ConnectionHandler,
+        private trustProxyProtocol: boolean = false
     ) {}
 
-    readonly processConnection = (connection: stream.Duplex) => {
-        // Ignore all errors - we want to be _very_ cavalier about weird behaviour
-        connection.removeListener('error', connErrorHandler); // But watch out for dupes
+    // Entry point for the outermost TCP connection, where PROXY protocol may appear.
+    readonly processInitialConnection = (connection: stream.Duplex) => {
+        connection.removeListener('error', connErrorHandler);
         connection.on('error', connErrorHandler);
 
-        const initialData: Buffer | null = connection.read();
-        if (initialData === null) {
-            // Wait until we have more bytes available (at least 3 to differentiate H2 & H1):
-            connection.once('readable', () => this.processConnection(connection));
+        if (this.trustProxyProtocol) {
+            this.parseProxyProtocolHeader(connection, Buffer.alloc(0));
+        } else {
+            this.processProtocolData(connection, Buffer.alloc(0));
+        }
+    }
+
+    readonly processConnection = (connection: stream.Duplex) => {
+        connection.removeListener('error', connErrorHandler);
+        connection.on('error', connErrorHandler);
+        this.processProtocolData(connection, Buffer.alloc(0));
+    }
+
+    private parseProxyProtocolHeader(connection: stream.Duplex, bufferedData: Buffer) {
+        const chunk: Buffer | null = connection.read();
+        const data = chunk ? Buffer.concat([bufferedData, chunk]) : bufferedData;
+
+        if (data.length === 0) {
+            // Wait for data
+            connection.once('readable', () => this.parseProxyProtocolHeader(connection, data));
+            return;
+        }
+
+        const type = detectProxyProtocol(data);
+
+        if (type === 'incomplete') {
+            // Need more data to determine if PROXY protocol is present
+            // But cap at reasonable limit to avoid buffering forever
+            if (data.length > 256) {
+                this.processProtocolData(connection, data);
+                return;
+            }
+            connection.once('readable', () => this.parseProxyProtocolHeader(connection, data));
+            return;
+        }
+
+        if (type === 'none') {
+            this.processProtocolData(connection, data);
+            return;
+        }
+
+        // We have a PROXY protocol header (v1 or v2)
+        const result = parseProxyProtocol(data);
+
+        if (result === null) {
+            // Incomplete header - need more data (but we know it's PROXY protocol)
+            // Cap total buffering to prevent memory exhaustion
+            if (data.length > 512) {
+                console.error('PROXY protocol header too large, closing connection');
+                connection.destroy();
+                return;
+            }
+            connection.once('readable', () => this.parseProxyProtocolHeader(connection, data));
+            return;
+        }
+
+        // Successfully parsed PROXY protocol
+        if (result.sourceAddress) {
+            connection[PROXY_PROTOCOL] = {
+                sourceAddress: result.sourceAddress,
+                sourcePort: result.sourcePort,
+                destinationAddress: result.destinationAddress,
+                destinationPort: result.destinationPort
+            };
+        }
+
+        // Continue with remaining data (PROXY header stripped)
+        this.processProtocolData(connection, result.remainingData);
+    }
+
+    private processProtocolData(connection: stream.Duplex, initialData: Buffer) {
+        if (initialData.length === 0) {
+            // Wait until we have more bytes available
+            connection.once('readable', () => {
+                const data: Buffer | null = connection.read();
+                if (data === null) {
+                    connection.once('readable', () => this.processProtocolData(connection, Buffer.alloc(0)));
+                } else {
+                    this.processProtocolData(connection, data);
+                }
+            });
             return;
         }
 

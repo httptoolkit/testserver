@@ -4,13 +4,14 @@ import {
     readTlsClientHello,
     calculateJa3FromFingerprintData,
     calculateJa4FromHelloData,
-    TlsHelloData
 } from 'read-tls-client-hello';
 
 import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
 import { createTlsHandler } from './tls-handler.js';
 import { CertOptions } from './tls-certificates/cert-definitions.js';
 import { ConnectionProcessor } from './process-connection.js';
+import { PROXY_PROTOCOL, type ProxyProtocolData } from './proxy-protocol.js';
+import { TLS_CLIENT_HELLO, type TlsClientHelloData } from './tls-client-hello.js';
 
 import { AcmeCA, AcmeProvider } from './tls-certificates/acme.js';
 import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
@@ -25,10 +26,9 @@ declare module 'stream' {
         requestsInBatch?: number;
         pipelining?: boolean;
         // TLS fingerprint data (set for TLS connections)
-        tlsClientHello?: TlsHelloData & {
-            ja3: string;
-            ja4: string;
-        };
+        [TLS_CLIENT_HELLO]?: TlsClientHelloData;
+        // PROXY protocol data (set when connection uses PROXY protocol)
+        [PROXY_PROTOCOL]?: ProxyProtocolData;
     }
 }
 
@@ -41,6 +41,7 @@ interface ServerOptions {
     localCaKey?: string;
     localCaCert?: string;
     dnsServer?: boolean;
+    trustProxyProtocol?: boolean;
 }
 
 function isWildcardCoverable(domain: string, rootDomain: string): boolean {
@@ -173,7 +174,7 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
             // Read and store TLS fingerprint before TLS handshake
             try {
                 const helloData = await readTlsClientHello(conn);
-                conn.tlsClientHello = {
+                conn[TLS_CLIENT_HELLO] = {
                     ...helloData,
                     ja3: calculateJa3FromFingerprintData(helloData.fingerprintData),
                     ja4: calculateJa4FromHelloData(helloData)
@@ -185,7 +186,8 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
             tlsHandler.handleConnection(conn);
         },
         (conn) => httpHandler.emit('connection', conn),
-        (conn) => http2Handler.emit('connection', conn)
+        (conn) => http2Handler.emit('connection', conn),
+        options.trustProxyProtocol ?? false
     );
 
     const tlsConfig = await generateTlsConfig(options);
@@ -201,7 +203,7 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
 
     return (conn: net.Socket) => {
         try {
-            connProcessor.processConnection(conn);
+            connProcessor.processInitialConnection(conn);
         } catch (e: any) {
             console.error(e);
             conn.destroy();
@@ -233,7 +235,8 @@ if (wasRunDirectly) {
         certCacheDir: process.env.CERT_CACHE_DIR,
         localCaKey: process.env.LOCAL_CA_KEY,
         localCaCert: process.env.LOCAL_CA_CERT,
-        dnsServer: process.env.DNS_SERVER === 'true'
+        dnsServer: process.env.DNS_SERVER === 'true',
+        trustProxyProtocol: process.env.TRUST_PROXY_PROTOCOL === 'true'
     }).then((tcpHandler) => {
         ports.forEach((port) => {
             const server = createTcpServer(tcpHandler);
