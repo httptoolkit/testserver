@@ -23,18 +23,18 @@ primary_region = 'cdg'
 
 [[services]]
   protocol = "tcp"
-  internal = 8080
-
-  [services.proxy_proto_options]
-    version = "v1"
+  internal_port = 8080
 
   [[services.ports]]
     port = "80"
+    handlers = ["proxy_proto"]
   [[services.ports]]
     port = "443"
+    handlers = ["proxy_proto"]
   [[services.ports]]
     start_port = 8000
     end_port = 10000
+    handlers = ["proxy_proto"]
 
   # Continually check /echo can return a valid HTTPS response
   [[services.http_checks]]

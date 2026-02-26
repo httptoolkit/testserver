@@ -223,6 +223,39 @@ describe("IP endpoint", () => {
             expect(body.origin).to.equal('198.18.0.42');
         });
 
+        it("extracts origin from PROXY v1 header with TLS + HTTP/2", async () => {
+            const socket = await createProxySocket(proxyServerPort,
+                buildProxyV1Header('203.0.113.99', '10.0.0.1', 22222, 443)
+            );
+
+            // Wait for server to process PROXY header before TLS handshake
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const tlsSocket = tls.connect({
+                socket,
+                servername: 'localhost',
+                rejectUnauthorized: false,
+                ALPNProtocols: ['h2']
+            });
+            await new Promise<void>((resolve) => tlsSocket.on('secureConnect', resolve));
+
+            expect(tlsSocket.alpnProtocol).to.equal('h2');
+
+            const client = http2.connect('https://localhost', {
+                createConnection: () => tlsSocket as any
+            });
+
+            const request = client.request({
+                ':path': '/ip',
+                ':method': 'GET'
+            });
+
+            const body: any = await streamConsumers.json(request);
+            client.close();
+
+            expect(body.origin).to.equal('203.0.113.99');
+        });
+
         it("handles malformed PROXY v1 with invalid port gracefully", async () => {
             const socket = await createProxySocket(proxyServerPort,
                 Buffer.from('PROXY TCP4 1.2.3.4 5.6.7.8 99999 80\r\n')
