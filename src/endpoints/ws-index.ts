@@ -8,6 +8,8 @@ export interface WebSocketEndpoint {
     /** Return true to match, false to skip, or throw StatusError for invalid params. */
     matchPath: (path: string, hostnamePrefix?: string) => boolean;
     getRemainingPath?: (path: string) => string | undefined;
+    /** Return a subprotocol name to select, or false to explicitly select none. */
+    getProtocol?: (path: string) => string | false;
     handle: (ws: WebSocket, req: IncomingMessage, options: {
         path: string;
         query: URLSearchParams;
@@ -21,3 +23,4 @@ export * from './ws/close.js';
 export * from './ws/message.js';
 export * from './ws/reset.js';
 export * from './ws/repeat.js';
+export * from './ws/subprotocol.js';

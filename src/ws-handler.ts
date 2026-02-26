@@ -6,7 +6,26 @@ import { StatusError } from '@httptoolkit/util';
 import { wsEndpoints } from './endpoints/endpoint-index.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 
-const wss = new WebSocketServer({ noServer: true });
+const FORCED_PROTOCOL = Symbol('ws-forced-protocol');
+
+declare module 'http' {
+    interface IncomingMessage {
+        [FORCED_PROTOCOL]?: string | false;
+    }
+}
+
+const wss = new WebSocketServer({
+    noServer: true,
+    handleProtocols(clientProtocols, req) {
+        const forced = req[FORCED_PROTOCOL];
+        if (forced === undefined) {
+            // No subprotocol endpoint in chain — use default ws behavior
+            return clientProtocols.values().next().value || false;
+        }
+
+        return forced;
+    }
+});
 
 export function handleWebSocketUpgrade(
     req: IncomingMessage,
@@ -44,6 +63,23 @@ export function handleWebSocketUpgrade(
     socket.on('error', (err) => {
         console.log('WebSocket upgrade socket error:', err.message);
     });
+
+    const protocolEntries = entries.filter(e => e.endpoint.getProtocol);
+    if (protocolEntries.length > 1) {
+        console.log(`WebSocket upgrade to ${path}: multiple subprotocol endpoints`);
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+    if (protocolEntries.length === 1) {
+        req[FORCED_PROTOCOL] = protocolEntries[0].endpoint.getProtocol!(protocolEntries[0].path);
+
+        // ws only calls handleProtocols when the client sends Sec-WebSocket-Protocol.
+        // Ensure the header exists so our handler always runs.
+        if (!req.headers['sec-websocket-protocol']) {
+            req.headers['sec-websocket-protocol'] = '_';
+        }
+    }
 
     wss.handleUpgrade(req, socket, head, async (ws) => {
         ws.on('error', (err) => {
