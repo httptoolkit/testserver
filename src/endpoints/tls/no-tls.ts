@@ -2,6 +2,7 @@ import { TlsEndpoint } from '../tls-index.js';
 
 export const noTls: TlsEndpoint = {
     sniPart: 'no-tls',
+    plainTextAllowed: true,
     configureTlsOptions() {
         throw new Error('Intentionally rejecting TLS connection');
     },

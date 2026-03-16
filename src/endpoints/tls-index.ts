@@ -6,6 +6,7 @@ export type { EndpointMeta, EndpointGroup };
 
 export interface TlsEndpoint {
     sniPart: string;
+    plainTextAllowed?: boolean;
     configureCertOptions?(): CertOptions;
     configureTlsOptions?(tlsOptions: tls.SecureContextOptions): tls.SecureContextOptions;
     configureAlpnPreferences?(preferences: string[]): string[];

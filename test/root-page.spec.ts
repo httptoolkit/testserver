@@ -32,8 +32,8 @@ describe("Root page endpoint", () => {
         expect(body).to.include('TLS Endpoints');
     });
 
-    it("returns documentation page for prefixed hostnames too", async () => {
-        const address = `http://http1.localhost:${serverPort}/`;
+    it("returns documentation page for prefixed hostnames", async () => {
+        const address = `http://no-tls.localhost:${serverPort}/`;
         const response = await fetch(address);
 
         expect(response.status).to.equal(200);

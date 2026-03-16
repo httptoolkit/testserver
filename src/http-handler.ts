@@ -3,7 +3,7 @@ import * as http from 'http';
 import * as http2 from 'http2';
 import { MaybePromise, StatusError } from '@httptoolkit/util';
 
-import { httpEndpoints } from './endpoints/endpoint-index.js';
+import { httpEndpoints, tlsEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
@@ -92,6 +92,31 @@ function createHttpRequestHandler(options: {
         const hostnamePrefix = url.hostname.endsWith(options.rootDomain)
             ? url.hostname.slice(0, -options.rootDomain.length - 1)
             : undefined;
+
+        // If this is a plain HTTP request to a TLS-configuring subdomain, redirect it with
+        // a clear message — the TLS settings would be silently ignored over plain HTTP.
+        if (protocol === 'http' && hostnamePrefix) {
+            const prefixParts = hostnamePrefix.includes('--')
+                ? hostnamePrefix.split('--')
+                : hostnamePrefix.split('.');
+
+            const tlsOnlyParts = prefixParts.filter(part => {
+                const endpoint = tlsEndpoints.find(e => e.sniPart === part);
+                return endpoint && !endpoint.plainTextAllowed;
+            });
+
+            if (tlsOnlyParts.length > 0) {
+                const httpsUrl = url.href.replace(/^http:/, 'https:');
+                res.writeHead(301, {
+                    'location': httpsUrl,
+                    'content-type': 'text/plain'
+                });
+                res.end(
+                    `This endpoint requires HTTPS. Redirecting to ${httpsUrl}`
+                );
+                return;
+            }
+        }
 
         // Serve docs at root path for all prefixes except 'example' which has its own root handler
         const endpointPrefixes = ['example'];
