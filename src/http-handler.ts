@@ -1,4 +1,3 @@
-import { TLSSocket } from 'tls';
 import * as http from 'http';
 import * as http2 from 'http2';
 import { MaybePromise, StatusError } from '@httptoolkit/util';
@@ -53,7 +52,9 @@ function createHttpRequestHandler(options: {
     rootDomain: string
 }): RequestHandler {
     return async function handleRequest(req, res) {
-        const protocol = `http${req.socket instanceof TLSSocket ? 's' : ''}`;
+        const socket = req.socket as any;
+        const isHttps = socket.encrypted || socket.stream?.encrypted;
+        const protocol = isHttps ? 'https' : 'http';
 
         if (!req.url!.startsWith('/')) {
             // Absolute URL. Block requests unless they're for us personally. We

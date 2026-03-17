@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as http2 from 'http2';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
@@ -100,6 +101,27 @@ describe("TLS-required endpoints over plain HTTP", () => {
         const response = await fetch(
             `http://localhost:${serverPort}/status/200`
         );
+
+        expect(response.status).to.equal(200);
+    });
+
+    it("does not redirect HTTP/2+TLS requests for TLS subdomains", async () => {
+        const client = http2.connect(`https://localhost:${serverPort}`, {
+            rejectUnauthorized: false
+        });
+
+        const response = await new Promise<{ status: number | undefined }>((resolve, reject) => {
+            const req = client.request({
+                ':authority': 'http2.localhost',
+                ':path': '/json'
+            });
+            req.on('response', (headers) => {
+                resolve({ status: headers[':status'] });
+            });
+            req.on('error', reject);
+            req.end();
+        });
+        client.close();
 
         expect(response.status).to.equal(200);
     });

@@ -44,6 +44,7 @@ class DataCapturingStream extends stream.Duplex {
     readonly remotePort: number | undefined;
     readonly localAddress: string | undefined;
     readonly localPort: number | undefined;
+    readonly encrypted: boolean;
 
     constructor(private wrapped: stream.Duplex, initialData?: Buffer) {
         super();
@@ -52,6 +53,7 @@ class DataCapturingStream extends stream.Duplex {
         this.remotePort = (wrapped as any).remotePort;
         this.localAddress = (wrapped as any).localAddress;
         this.localPort = (wrapped as any).localPort;
+        this.encrypted = (wrapped as any).encrypted ?? false;
         this[PROXY_PROTOCOL] = wrapped[PROXY_PROTOCOL];
 
         wrapped.on('error', (err) => this.emit('error', err));
