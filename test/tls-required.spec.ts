@@ -107,7 +107,8 @@ describe("TLS-required endpoints over plain HTTP", () => {
 
     it("does not redirect HTTP/2+TLS requests for TLS subdomains", async () => {
         const client = http2.connect(`https://localhost:${serverPort}`, {
-            rejectUnauthorized: false
+            rejectUnauthorized: false,
+            servername: 'http2.localhost'
         });
 
         const response = await new Promise<{ status: number | undefined }>((resolve, reject) => {

@@ -7,6 +7,7 @@ import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 import { getDocsHtml } from './docs-page.js';
+import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
 
 function stopRawDataCapture(req: HttpRequest): void {
     if (req.httpVersion === '2.0') {
@@ -65,6 +66,24 @@ function createHttpRequestHandler(options: {
                 res.writeHead(400, { connection: 'close' });
                 res.end();
                 return;
+            }
+        }
+
+        // Reject H2 connection coalescing: if :authority doesn't match the TLS SNI,
+        // return 421 so the browser opens a new connection with the correct SNI.
+        if (isHttps && req.httpVersion === '2.0') {
+            const authority = req.headers[':authority']?.toString();
+            if (authority) {
+                const hostWithoutPort = authority.replace(/:\d+$/, '').toLowerCase();
+                const sni = socket.stream?.[TLS_CLIENT_HELLO]?.serverName?.toLowerCase();
+
+                if (sni && sni !== hostWithoutPort) {
+                    res.writeHead(421, { 'content-type': 'text/plain' });
+                    res.end(
+                        `Misdirected Request: TLS connection was established for ${sni} but got a request for ${hostWithoutPort}`
+                    );
+                    return;
+                }
             }
         }
 

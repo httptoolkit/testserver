@@ -6,6 +6,7 @@ import {
     parseProxyProtocol,
     detectProxyProtocol,
 } from './proxy-protocol.js';
+import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
 
 const FRAME_HEADER_SIZE = 9;
 
@@ -55,6 +56,7 @@ class DataCapturingStream extends stream.Duplex {
         this.localPort = (wrapped as any).localPort;
         this.encrypted = (wrapped as any).encrypted ?? false;
         this[PROXY_PROTOCOL] = wrapped[PROXY_PROTOCOL];
+        this[TLS_CLIENT_HELLO] = wrapped[TLS_CLIENT_HELLO];
 
         wrapped.on('error', (err) => this.emit('error', err));
         wrapped.on('close', () => this.emit('close'));
