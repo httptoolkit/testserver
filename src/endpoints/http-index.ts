@@ -61,3 +61,6 @@ export * from './http/base64.js';
 export * from './http/cache.js';
 export * from './http/etag.js';
 export * from './http/redirect.js';
+export * from './http/bytes.js';
+export * from './http/stream.js';
+export * from './http/stream-bytes.js';
