@@ -5,7 +5,7 @@ import { expect } from 'chai';
 import { WebSocket } from 'ws';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 
 // Raw WebSocket upgrade that skips the ws client's strict subprotocol validation
 // (which rejects mismatched or missing server-selected protocols with an error)
@@ -50,7 +50,7 @@ describe("WebSocket Subprotocol endpoints", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer({
+        server = makeDestroyable(await createTestServer({
             domain: 'localhost'
         }));
         await new Promise<void>((resolve) => server.listen(resolve));

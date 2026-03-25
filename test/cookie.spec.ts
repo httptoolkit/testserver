@@ -4,7 +4,7 @@ import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
 import * as Cookie from 'cookie';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 
 describe("Cookie endpoints", () => {
 
@@ -12,7 +12,7 @@ describe("Cookie endpoints", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer());
+        server = makeDestroyable(await createTestServer());
         await new Promise<void>((resolve) => server.listen(resolve));
         serverPort = (server.address() as net.AddressInfo).port;
     });

@@ -4,7 +4,7 @@ import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 import * as streamConsumers from 'stream/consumers';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 import { delay } from '@httptoolkit/util';
 
 describe("Trailers endpoint", () => {
@@ -13,7 +13,7 @@ describe("Trailers endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer());
+        server = makeDestroyable(await createTestServer());
         await new Promise<void>((resolve) => server.listen(resolve));
         serverPort = (server.address() as net.AddressInfo).port;
     });

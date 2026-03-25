@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { WebSocket } from 'ws';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 
 describe("WebSocket Close endpoint", () => {
 
@@ -11,7 +11,7 @@ describe("WebSocket Close endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer({
+        server = makeDestroyable(await createTestServer({
             domain: 'localhost'
         }));
         await new Promise<void>((resolve) => server.listen(resolve));

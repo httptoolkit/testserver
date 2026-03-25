@@ -6,7 +6,7 @@ import * as streamConsumers from 'stream/consumers';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 import {
     buildProxyV1Header,
     buildProxyV2Header,
@@ -19,7 +19,7 @@ describe("Echo endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer({
+        server = makeDestroyable(await createTestServer({
             domain: 'localhost'
         }));
         await new Promise<void>((resolve) => server.listen(resolve));
@@ -308,7 +308,7 @@ accept-encoding: gzip, deflate
         let proxyServerPort: number;
 
         beforeEach(async () => {
-            proxyServer = makeDestroyable(await createServer({
+            proxyServer = makeDestroyable(await createTestServer({
                 domain: 'localhost',
                 trustProxyProtocol: true
             }));

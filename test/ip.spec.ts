@@ -5,7 +5,7 @@ import * as streamConsumers from 'stream/consumers';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 import {
     buildProxyV1Header,
     buildProxyV2Header,
@@ -19,7 +19,7 @@ describe("IP endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer());
+        server = makeDestroyable(await createTestServer());
         await new Promise<void>((resolve) => server.listen(resolve));
         serverPort = (server.address() as net.AddressInfo).port;
     });
@@ -45,7 +45,7 @@ describe("IP endpoint", () => {
         let proxyServerPort: number;
 
         beforeEach(async () => {
-            proxyServer = makeDestroyable(await createServer({ trustProxyProtocol: true }));
+            proxyServer = makeDestroyable(await createTestServer({ trustProxyProtocol: true }));
             await new Promise<void>((resolve) => proxyServer.listen(resolve));
             proxyServerPort = (proxyServer.address() as net.AddressInfo).port;
         });

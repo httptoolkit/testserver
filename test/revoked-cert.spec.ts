@@ -1,14 +1,14 @@
 import { expect } from 'chai';
 import * as tls from 'tls';
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 
 describe("Revoked certificate endpoint", () => {
 
-    let server: Awaited<ReturnType<typeof createServer>>;
+    let server: Awaited<ReturnType<typeof createTestServer>>;
     let serverPort: number;
 
     before(async () => {
-        server = await createServer();
+        server = await createTestServer();
         await new Promise<void>((resolve) => {
             server.listen(0, () => {
                 serverPort = (server.address() as any).port;

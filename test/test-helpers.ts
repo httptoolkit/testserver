@@ -2,6 +2,22 @@ import * as net from 'net';
 import * as http from 'http';
 import * as streamConsumers from 'stream/consumers';
 
+import { generateCACertificate } from '../src/tls-certificates/local-ca.js';
+import { createServer, type ServerOptions } from '../src/server.js';
+
+let cachedCA: { key: string; cert: string } | undefined;
+
+export async function createTestServer(options: ServerOptions = {}) {
+    if (!cachedCA) {
+        cachedCA = await generateCACertificate();
+    }
+    return createServer({
+        localCaKey: cachedCA.key,
+        localCaCert: cachedCA.cert,
+        ...options
+    });
+}
+
 export function buildProxyV1Header(
     srcAddr: string,
     dstAddr: string,

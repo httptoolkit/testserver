@@ -32,7 +32,7 @@ declare module 'stream' {
     }
 }
 
-interface ServerOptions {
+export interface ServerOptions {
     domain?: string;
     acmeProvider?: AcmeProvider;
     acmeAccountKey?: string;

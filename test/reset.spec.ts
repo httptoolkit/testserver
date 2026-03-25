@@ -4,7 +4,7 @@ import * as http from 'http';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
-import { createServer } from '../src/server.js';
+import { createTestServer } from './test-helpers.js';
 
 describe("Reset endpoint", () => {
 
@@ -12,7 +12,7 @@ describe("Reset endpoint", () => {
     let serverPort: number;
 
     beforeEach(async () => {
-        server = makeDestroyable(await createServer());
+        server = makeDestroyable(await createTestServer());
         await new Promise<void>((resolve) => server.listen(resolve));
         serverPort = (server.address() as net.AddressInfo).port;
     });
