@@ -8,7 +8,7 @@ import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 import { getDocsHtml } from './docs-page.js';
-import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
+import { getClientHello } from './tls-client-hello.js';
 
 function stopRawDataCapture(req: HttpRequest): void {
     if (req.httpVersion === '2.0') {
@@ -76,9 +76,9 @@ function createHttpRequestHandler(options: {
             const authority = req.headers[':authority']?.toString();
             if (authority) {
                 const hostWithoutPort = authority.replace(/:\d+$/, '').toLowerCase();
-                const tlsClientHello = socket.stream?.[TLS_CLIENT_HELLO];
-                const sni = (tlsClientHello
-                    ? getExtensionData(tlsClientHello, 'sni')?.serverName
+                const clientHello = getClientHello(req);
+                const sni = (clientHello
+                    ? getExtensionData(clientHello, 'sni')?.serverName
                     : undefined
                 )?.toLowerCase();
 
