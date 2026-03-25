@@ -3,12 +3,14 @@ import * as crypto from 'node:crypto';
 import * as stream from 'stream';
 import { EventEmitter } from 'events';
 
+import { ErrorLike } from '@httptoolkit/util';
+import { getExtensionData } from 'read-tls-client-hello';
+
 import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
 import { CertOptions, calculateCertCacheKey } from './tls-certificates/cert-definitions.js';
 import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
-import { ErrorLike } from '@httptoolkit/util';
 import { PROXY_PROTOCOL } from './proxy-protocol.js';
 import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
 
@@ -137,7 +139,10 @@ class TlsConnectionHandler {
 
     async handleConnection(rawSocket: stream.Duplex) {
         try {
-            const serverName = rawSocket[TLS_CLIENT_HELLO]?.serverName;
+            const tlsClientHello = rawSocket[TLS_CLIENT_HELLO];
+            const serverName = tlsClientHello
+                ? getExtensionData(tlsClientHello, 'sni')?.serverName
+                : undefined;
             const domain = serverName || this.tlsConfig.rootDomain;
 
             const serverNameParts = getSNIPrefixParts(domain, this.tlsConfig.rootDomain);
@@ -185,8 +190,9 @@ class TlsConnectionHandler {
                 : DEFAULT_ALPN_PROTOCOLS;
 
             // Check if client requested OCSP stapling (extension 5 = status_request)
-            const clientExtensions = rawSocket[TLS_CLIENT_HELLO]?.fingerprintData?.[2];
-            const clientRequestedOCSP = clientExtensions?.includes(5) ?? false;
+            const clientRequestedOCSP = tlsClientHello
+                ? !!getExtensionData(tlsClientHello, 'status_request')
+                : false;
 
             const tlsSocket = new tls.TLSSocket(rawSocket, {
                 isServer: true,

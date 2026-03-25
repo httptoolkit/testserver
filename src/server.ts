@@ -2,8 +2,8 @@ import * as net from 'net';
 
 import {
     readTlsClientHello,
-    calculateJa3FromFingerprintData,
-    calculateJa4FromHelloData,
+    calculateJa3,
+    calculateJa4,
 } from 'read-tls-client-hello';
 
 import { createHttp1Handler, createHttp2Handler } from './http-handler.js';
@@ -176,8 +176,8 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
                 const helloData = await readTlsClientHello(conn);
                 conn[TLS_CLIENT_HELLO] = {
                     ...helloData,
-                    ja3: calculateJa3FromFingerprintData(helloData.fingerprintData),
-                    ja4: calculateJa4FromHelloData(helloData)
+                    ja3: calculateJa3(helloData),
+                    ja4: calculateJa4(helloData)
                 };
             } catch (e) {
                 // Non-TLS traffic or malformed client hello - continue without fingerprint

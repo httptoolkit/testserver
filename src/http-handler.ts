@@ -1,6 +1,7 @@
 import * as http from 'http';
 import * as http2 from 'http2';
 import { MaybePromise, StatusError } from '@httptoolkit/util';
+import { getExtensionData } from 'read-tls-client-hello';
 
 import { httpEndpoints, tlsEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
@@ -75,7 +76,11 @@ function createHttpRequestHandler(options: {
             const authority = req.headers[':authority']?.toString();
             if (authority) {
                 const hostWithoutPort = authority.replace(/:\d+$/, '').toLowerCase();
-                const sni = socket.stream?.[TLS_CLIENT_HELLO]?.serverName?.toLowerCase();
+                const tlsClientHello = socket.stream?.[TLS_CLIENT_HELLO];
+                const sni = (tlsClientHello
+                    ? getExtensionData(tlsClientHello, 'sni')?.serverName
+                    : undefined
+                )?.toLowerCase();
 
                 if (sni && sni !== hostWithoutPort) {
                     res.writeHead(421, { 'content-type': 'text/plain' });
