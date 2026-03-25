@@ -43,6 +43,21 @@ export const httpTlsMetadata: EndpointGroup = {
     name: 'TLS Metadata'
 };
 
+export const httpRedirects: EndpointGroup = {
+    id: 'redirects',
+    name: 'Redirects'
+};
+
+export const httpResponseInspection: EndpointGroup = {
+    id: 'response-inspection',
+    name: 'Response Inspection'
+};
+
+export const httpDynamicData: EndpointGroup = {
+    id: 'dynamic-data',
+    name: 'Dynamic Data'
+};
+
 // WebSocket endpoint groups
 export const wsMessaging: EndpointGroup = {
     id: 'messaging',
