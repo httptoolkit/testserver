@@ -1,5 +1,6 @@
 import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 
 const matchPath = (path: string) => path === '/user-agent';
 
@@ -19,6 +20,7 @@ export const userAgent: HttpEndpoint = {
     meta: {
         path: '/user-agent',
         description: 'Returns the User-Agent header from the request.',
-        examples: ['/user-agent']
+        examples: ['/user-agent'],
+        group: httpRequestInspection
     }
 };

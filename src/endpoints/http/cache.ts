@@ -1,6 +1,6 @@
 import { StatusError } from '@httptoolkit/util';
 import { HttpEndpoint } from '../http-index.js';
-import { httpResponseInspection } from '../groups.js';
+import { httpCaching } from '../groups.js';
 import { buildHttpBinAnythingData } from '../../httpbin-compat.js';
 import { serializeJson } from '../../util.js';
 
@@ -22,7 +22,7 @@ export const cache: HttpEndpoint = {
         path: '/cache',
         description: 'Returns 304 Not Modified if an If-Modified-Since or If-None-Match header is present, otherwise returns the same response as /get.',
         examples: ['/cache'],
-        group: httpResponseInspection
+        group: httpCaching
     }
 };
 
@@ -46,6 +46,6 @@ export const cacheWithAge: HttpEndpoint = {
         path: '/cache/{n}',
         description: 'Sets a Cache-Control header for n seconds, then returns the same response as /get.',
         examples: ['/cache/60'],
-        group: httpResponseInspection
+        group: httpCaching
     }
 };

@@ -1,5 +1,6 @@
 import { delay, StatusError } from '@httptoolkit/util';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpDynamicData } from '../groups.js';
 import { buildHttpBinAnythingEndpoint } from '../../httpbin-compat.js';
 
 const getRemainingPath = (path: string): string | undefined => {
@@ -43,6 +44,7 @@ export const delayEndpoint: HttpEndpoint = {
     meta: {
         path: '/delay/{seconds}',
         description: 'Delays the response by the specified number of seconds (max 10). Can be chained with other endpoints.',
-        examples: ['/delay/1', '/delay/5', '/delay/2/status/200']
+        examples: ['/delay/1', '/delay/5', '/delay/2/status/200'],
+        group: httpDynamicData
     }
 };

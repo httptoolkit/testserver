@@ -1,4 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 import { buildHttpBinAnythingEndpoint } from '../../httpbin-compat.js';
 
 export const anything: HttpEndpoint = {
@@ -7,6 +8,7 @@ export const anything: HttpEndpoint = {
     meta: {
         path: '/anything',
         description: 'Returns JSON containing the parsed details of the request, including method, url, headers, args, data, files, form, and origin.',
-        examples: ['/anything', '/anything/subpath']
+        examples: ['/anything', '/anything/subpath'],
+        group: httpRequestInspection
     }
 };

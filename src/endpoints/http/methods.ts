@@ -1,5 +1,6 @@
 import { METHODS } from 'http';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 import { buildHttpBinAnythingEndpoint } from '../../httpbin-compat.js';
 
 const nonGetMethods = METHODS.filter(method => method !== 'GET');
@@ -31,6 +32,7 @@ export const nonGetMethodEndpoint: HttpEndpoint = {
     meta: {
         path: '/{method}',
         description: 'Returns request info for the specified HTTP method. Returns 405 if the request method does not match the path.',
-        examples: ['/get', '/post', '/put', '/patch', '/delete']
+        examples: ['/get', '/post', '/put', '/patch', '/delete'],
+        group: httpRequestInspection
     }
 }

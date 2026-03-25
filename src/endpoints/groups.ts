@@ -13,9 +13,24 @@ export interface EndpointMeta {
 }
 
 // HTTP endpoint groups
-export const httpContentExamples: EndpointGroup = {
-    id: 'content-examples',
-    name: 'Response Content Formats'
+export const httpRequestInspection: EndpointGroup = {
+    id: 'request-inspection',
+    name: 'Request Inspection'
+};
+
+export const httpCustomResponses: EndpointGroup = {
+    id: 'custom-responses',
+    name: 'Custom Responses'
+};
+
+export const httpRedirects: EndpointGroup = {
+    id: 'redirects',
+    name: 'Redirects'
+};
+
+export const httpCaching: EndpointGroup = {
+    id: 'caching',
+    name: 'Caching'
 };
 
 export const httpAuthentication: EndpointGroup = {
@@ -28,9 +43,24 @@ export const httpCookies: EndpointGroup = {
     name: 'Cookies'
 };
 
-export const httpContentEncoding: EndpointGroup = {
-    id: 'content-encoding',
-    name: 'Response Content Encodings'
+export const httpResponseFormats: EndpointGroup = {
+    id: 'response-formats',
+    name: 'Response Formats'
+};
+
+export const httpResponseEncoding: EndpointGroup = {
+    id: 'response-encoding',
+    name: 'Response Encoding'
+};
+
+export const httpDynamicData: EndpointGroup = {
+    id: 'dynamic-data',
+    name: 'Dynamic Data'
+};
+
+export const httpTlsInspection: EndpointGroup = {
+    id: 'tls-inspection',
+    name: 'TLS Inspection'
 };
 
 export const httpErrors: EndpointGroup = {
@@ -38,25 +68,19 @@ export const httpErrors: EndpointGroup = {
     name: 'Errors'
 };
 
-export const httpTlsMetadata: EndpointGroup = {
-    id: 'tls-metadata',
-    name: 'TLS Metadata'
-};
-
-export const httpRedirects: EndpointGroup = {
-    id: 'redirects',
-    name: 'Redirects'
-};
-
-export const httpResponseInspection: EndpointGroup = {
-    id: 'response-inspection',
-    name: 'Response Inspection'
-};
-
-export const httpDynamicData: EndpointGroup = {
-    id: 'dynamic-data',
-    name: 'Dynamic Data'
-};
+export const httpGroupOrder: EndpointGroup[] = [
+    httpRequestInspection,
+    httpCustomResponses,
+    httpRedirects,
+    httpCaching,
+    httpAuthentication,
+    httpCookies,
+    httpResponseFormats,
+    httpResponseEncoding,
+    httpDynamicData,
+    httpTlsInspection,
+    httpErrors
+];
 
 // WebSocket endpoint groups
 export const wsMessaging: EndpointGroup = {
@@ -79,6 +103,13 @@ export const wsErrors: EndpointGroup = {
     name: 'Errors'
 };
 
+export const wsGroupOrder: EndpointGroup[] = [
+    wsMessaging,
+    wsConnection,
+    wsTiming,
+    wsErrors
+];
+
 // TLS endpoint groups
 export const tlsCertificateModes: EndpointGroup = {
     id: 'certificate-modes',
@@ -96,3 +127,9 @@ export const tlsVersions: EndpointGroup = {
     name: 'TLS Versions',
     description: 'Endpoints that only accept specific TLS versions. These can be used together, to simulate a server supporting any specific combination of versions.'
 };
+
+export const tlsGroupOrder: EndpointGroup[] = [
+    tlsCertificateModes,
+    tlsProtocolNegotiation,
+    tlsVersions
+];

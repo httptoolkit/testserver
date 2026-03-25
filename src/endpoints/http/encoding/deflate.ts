@@ -1,7 +1,7 @@
 import * as zlib from 'node:zlib';
 import { serializeJson } from '../../../util.js';
 import { HttpEndpoint, HttpHandler } from '../../http-index.js';
-import { httpContentEncoding } from '../../groups.js';
+import { httpResponseEncoding } from '../../groups.js';
 
 // We pre-decode the data. Note that this differs from HTTPBin which returns
 // dynamic data here - for this reason, we use a subdirectory. Dynamic encoding
@@ -30,6 +30,6 @@ export const deflate: HttpEndpoint = {
         path: '/encoding/deflate',
         description: 'Returns deflate-encoded JSON data.',
         examples: ['/encoding/deflate'],
-        group: httpContentEncoding
+        group: httpResponseEncoding
     }
 };

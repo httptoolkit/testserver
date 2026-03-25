@@ -1,5 +1,6 @@
 import { serializeJson } from '../../util.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 
 const matchPath = (path: string) => path === '/trailers';
 
@@ -45,6 +46,7 @@ export const trailers: HttpEndpoint = {
     meta: {
         path: '/trailers',
         description: 'Tests HTTP trailers. Returns any received trailers and sends trailers back if the client indicated support via the TE header.',
-        examples: ['/trailers']
+        examples: ['/trailers'],
+        group: httpRequestInspection
     }
 };

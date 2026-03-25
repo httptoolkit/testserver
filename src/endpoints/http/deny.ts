@@ -1,5 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
-import { httpContentExamples } from '../groups.js';
+import { httpResponseFormats } from '../groups.js';
 
 const DENY_TEXT = `
           .-''''''-.
@@ -24,6 +24,6 @@ export const deny: HttpEndpoint = {
         path: '/deny',
         description: 'Returns a page denied by robots.txt.',
         examples: ['/deny'],
-        group: httpContentExamples
+        group: httpResponseFormats
     }
 };

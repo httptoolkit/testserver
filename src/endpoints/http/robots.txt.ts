@@ -1,4 +1,4 @@
-import { httpContentExamples } from '../groups.js';
+import { httpResponseFormats } from '../groups.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string) => path === '/robots.txt';
@@ -16,6 +16,6 @@ export const robotsTxt: HttpEndpoint = {
         path: '/robots.txt',
         description: 'Returns a robots.txt file that disallows crawling of all paths except the root.',
         examples: ['/robots.txt'],
-        group: httpContentExamples
+        group: httpResponseFormats
     }
 };

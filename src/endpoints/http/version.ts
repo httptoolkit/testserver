@@ -1,4 +1,5 @@
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
+import { httpDynamicData } from '../groups.js';
 
 const versionHash = process.env.VERSION_HASH || 'unknown';
 
@@ -16,7 +17,8 @@ export const versionJson: HttpEndpoint = {
     handle,
     meta: {
         path: '/version',
-        description: 'Returns the server version hash as JSON.',
-        examples: ['/version']
+        description: 'Returns the testserver.host server version hash as JSON.',
+        examples: ['/version'],
+        group: httpDynamicData
     }
 };

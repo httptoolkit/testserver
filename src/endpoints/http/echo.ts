@@ -5,6 +5,7 @@ import {
     HttpRequest,
     HttpResponse
 } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 
 const matchPath = ((path: string) => path === '/echo');
 
@@ -166,6 +167,7 @@ export const echo: HttpEndpoint = {
     meta: {
         path: '/echo',
         description: 'Echoes back the raw HTTP request data. For HTTP/2, returns parsed frame data as JSON lines.',
-        examples: ['/echo']
+        examples: ['/echo'],
+        group: httpRequestInspection
     }
 }

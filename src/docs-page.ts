@@ -1,5 +1,8 @@
 import { httpEndpoints, wsEndpoints, tlsEndpoints } from './endpoints/endpoint-index.js';
-import { EndpointMeta, EndpointGroup } from './endpoints/groups.js';
+import {
+    EndpointMeta, EndpointGroup,
+    httpGroupOrder, wsGroupOrder, tlsGroupOrder
+} from './endpoints/groups.js';
 
 interface EndpointWithMeta {
     meta?: EndpointMeta;
@@ -19,7 +22,10 @@ function sortEndpoints(endpoints: EndpointMeta[]): EndpointMeta[] {
     return endpoints.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-function groupEndpoints(endpoints: EndpointWithMeta[]): GroupedEndpoints[] {
+function groupEndpoints(
+    endpoints: EndpointWithMeta[],
+    groupOrder: EndpointGroup[]
+): GroupedEndpoints[] {
     const withMeta = endpoints.filter(e => e.meta).map(e => e.meta!);
     const groups = new Map<string, { group: EndpointGroup; endpoints: EndpointMeta[] }>();
 
@@ -43,10 +49,14 @@ function groupEndpoints(endpoints: EndpointWithMeta[]): GroupedEndpoints[] {
         result.push(ungrouped);
     }
 
-    // Add grouped endpoints alphabetically by name, with sorted endpoints within
+    // Add grouped endpoints in the order defined by the groupOrder array
+    const orderIndex = new Map(groupOrder.map((g, i) => [g.id, i]));
     const sortedEntries = [...groups.entries()]
         .filter(([k]) => k !== '')
-        .sort((a, b) => a[1].group.name.localeCompare(b[1].group.name));
+        .sort((a, b) =>
+            (orderIndex.get(a[1].group.id) ?? Infinity) -
+            (orderIndex.get(b[1].group.id) ?? Infinity)
+        );
 
     for (const [, groupData] of sortedEntries) {
         groupData.endpoints = sortEndpoints(groupData.endpoints);
@@ -480,14 +490,14 @@ export function getDocsHtml(): string {
             id: 'http-endpoints',
             title: 'HTTP Endpoints',
             intro: [],
-            groups: groupEndpoints(httpEndpoints),
+            groups: groupEndpoints(httpEndpoints, httpGroupOrder),
             type: 'http'
         },
         {
             id: 'websocket-endpoints',
             title: 'WebSocket Endpoints',
             intro: ['Connect via <code>wss://{hostname}/ws/...</code>'],
-            groups: groupEndpoints(wsEndpoints),
+            groups: groupEndpoints(wsEndpoints, wsGroupOrder),
             type: 'ws'
         },
         {
@@ -498,7 +508,7 @@ export function getDocsHtml(): string {
                 'Endpoints can be combined using double-dashes, e.g. <code>expired--revoked--http2--tls-v1-2.{domain}</code> will return an expired and revoked certificate, use TLSv1.2, and then negotiate HTTP/2 on the connection.',
                 'These can also be combined with the HTTP or WebSocket handlers above, which can be independently specified in the request path.'
             ],
-            groups: groupEndpoints(tlsEndpoints),
+            groups: groupEndpoints(tlsEndpoints, tlsGroupOrder),
             type: 'tls'
         }
     ];

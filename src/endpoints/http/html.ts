@@ -1,5 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
-import { httpContentExamples } from '../groups.js';
+import { httpResponseFormats } from '../groups.js';
 
 const HTML_CONTENT = `<!DOCTYPE html>
 <html>
@@ -26,6 +26,6 @@ export const html: HttpEndpoint = {
         path: '/html',
         description: 'Returns an HTML page.',
         examples: ['/html'],
-        group: httpContentExamples
+        group: httpResponseFormats
     }
 };

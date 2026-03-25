@@ -1,6 +1,6 @@
 import { serializeJson } from '../../util.js';
 import { HttpEndpoint } from '../http-index.js';
-import { httpResponseInspection } from '../groups.js';
+import { httpCustomResponses } from '../groups.js';
 
 export const responseHeaders: HttpEndpoint = {
     matchPath: (path) => path === '/response-headers',
@@ -27,6 +27,6 @@ export const responseHeaders: HttpEndpoint = {
         path: '/response-headers',
         description: 'Returns a response with headers set from the query parameters.',
         examples: ['/response-headers?X-Custom=value', '/response-headers?freeform=hello&freeform=world'],
-        group: httpResponseInspection
+        group: httpCustomResponses
     }
 };

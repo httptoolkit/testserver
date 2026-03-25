@@ -1,5 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
-import { httpResponseInspection } from '../groups.js';
+import { httpCaching } from '../groups.js';
 import { buildHttpBinAnythingData } from '../../httpbin-compat.js';
 import { serializeJson } from '../../util.js';
 
@@ -43,6 +43,6 @@ export const etag: HttpEndpoint = {
         path: '/etag/{etag}',
         description: 'Assumes the given etag for the resource and responds according to If-None-Match and If-Match request headers.',
         examples: ['/etag/my-etag'],
-        group: httpResponseInspection
+        group: httpCaching
     }
 };

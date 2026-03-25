@@ -3,7 +3,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 import { HttpEndpoint } from '../../http-index.js';
-import { httpContentEncoding } from '../../groups.js';
+import { httpResponseFormats } from '../../groups.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UTF8_HTML = fs.readFileSync(path.join(__dirname, 'utf8-demo.html'), 'utf-8').trimEnd();
@@ -18,6 +18,6 @@ export const utf8Encoding: HttpEndpoint = {
         path: '/encoding/utf8',
         description: 'Returns a UTF-8 encoded HTML page with various Unicode characters.',
         examples: ['/encoding/utf8'],
-        group: httpContentEncoding
+        group: httpResponseFormats
     }
 };

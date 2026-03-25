@@ -1,4 +1,4 @@
-import { httpContentExamples } from '../groups.js';
+import { httpResponseFormats } from '../groups.js';
 import { HttpEndpoint, HttpHandler } from '../http-index.js';
 
 const matchPath = (path: string, hostnamePrefix: string | undefined) =>
@@ -69,6 +69,6 @@ export const examplePage: HttpEndpoint = {
         path: 'example',
         description: 'Returns a copy of the example.com HTML page. Access via the example subdomain prefix.',
         examples: ['https://example.testserver.host/'],
-        group: httpContentExamples
+        group: httpResponseFormats
     }
 };

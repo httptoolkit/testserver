@@ -1,4 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
+import { httpRequestInspection } from '../groups.js';
 import { buildHttpBinAnythingEndpoint } from '../../httpbin-compat.js';
 
 export const headers: HttpEndpoint = {
@@ -7,7 +8,8 @@ export const headers: HttpEndpoint = {
     meta: {
         path: '/headers',
         description: 'Returns the request headers as JSON.',
-        examples: ['/headers']
+        examples: ['/headers'],
+        group: httpRequestInspection
     }
 };
 

@@ -12,7 +12,7 @@ import {
 } from 'read-tls-client-hello';
 
 import { HttpEndpoint } from '../http-index.js';
-import { httpTlsMetadata } from '../groups.js';
+import { httpTlsInspection } from '../groups.js';
 import { getClientHello } from '../../tls-client-hello.js';
 
 function annotateId(id: number, table: Record<number, string | undefined>) {
@@ -111,6 +111,6 @@ export const tlsClientHello: HttpEndpoint = {
         path: '/tls/client-hello',
         description: 'Returns the fully parsed TLS ClientHello. Requires HTTPS.',
         examples: ['/tls/client-hello'],
-        group: httpTlsMetadata
+        group: httpTlsInspection
     }
 };
