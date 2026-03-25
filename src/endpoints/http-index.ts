@@ -58,3 +58,6 @@ export * from './http/bearer.js';
 export * from './http/hidden-basic-auth.js';
 export * from './http/response-headers.js';
 export * from './http/base64.js';
+export * from './http/cache.js';
+export * from './http/etag.js';
+export * from './http/redirect.js';

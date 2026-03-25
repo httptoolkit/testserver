@@ -80,12 +80,12 @@ const getFiles = (body: Buffer, req: HttpRequest) => {
     }));
 }
 
-// This endpoint returns the request details in a convenient JSON format for analysis. The format
+// This returns the request details in a convenient JSON format for analysis. The format
 // aims to exactly match the output of httpbin.org (https://github.com/postmanlabs/httpbin/) for
 // interoperability since this is widely used (and it's generally a reasonable format for this).
-export const buildHttpBinAnythingEndpoint = (options: {
+export const buildHttpBinAnythingData = async (req: HttpRequest, options: {
     fieldFilter?: string[]
-}) => async (req: HttpRequest, res: HttpResponse) => {
+} = {}) => {
     const input = await streamConsumers.buffer(req); // Wait for all request data
 
     const isHTTPS = req.socket instanceof TLSSocket;
@@ -130,6 +130,13 @@ export const buildHttpBinAnythingEndpoint = (options: {
         result = _.pick(result, options.fieldFilter)
     }
 
+    return result;
+}
+
+export const buildHttpBinAnythingEndpoint = (options: {
+    fieldFilter?: string[]
+}) => async (req: HttpRequest, res: HttpResponse) => {
+    const result = await buildHttpBinAnythingData(req, options);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(serializeJson(result));
 }
