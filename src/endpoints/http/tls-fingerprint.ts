@@ -1,4 +1,5 @@
 import { HttpEndpoint } from '../http-index.js';
+import { httpTlsMetadata } from '../groups.js';
 import { getClientHello } from '../../tls-client-hello.js';
 
 export const tlsFingerprint: HttpEndpoint = {
@@ -27,6 +28,7 @@ export const tlsFingerprint: HttpEndpoint = {
     meta: {
         path: '/tls/fingerprint',
         description: 'Returns the TLS fingerprint (JA3 and JA4) of the client connection. Requires HTTPS.',
-        examples: ['/tls/fingerprint']
+        examples: ['/tls/fingerprint'],
+        group: httpTlsMetadata
     }
 };

@@ -38,6 +38,11 @@ export const httpErrors: EndpointGroup = {
     name: 'Errors'
 };
 
+export const httpTlsMetadata: EndpointGroup = {
+    id: 'tls-metadata',
+    name: 'TLS Metadata'
+};
+
 // WebSocket endpoint groups
 export const wsMessaging: EndpointGroup = {
     id: 'messaging',
