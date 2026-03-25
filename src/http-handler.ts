@@ -9,6 +9,7 @@ import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 import { getDocsHtml } from './docs-page.js';
 import { getClientHello } from './tls-client-hello.js';
+import { httpRequestsTotal } from './metrics.js';
 
 function stopRawDataCapture(req: HttpRequest): void {
     if (req.httpVersion === '2.0') {
@@ -54,6 +55,14 @@ function createHttpRequestHandler(options: {
     rootDomain: string
 }): RequestHandler {
     return async function handleRequest(req, res) {
+        let endpointLabel = 'unknown';
+
+        res.on('finish', () => {
+            const method = req.method || 'UNKNOWN';
+            const statusCode = res.statusCode.toString();
+            httpRequestsTotal.inc({ method, status_code: statusCode, endpoint: endpointLabel });
+        });
+
         const socket = req.socket as any;
         const isHttps = socket.encrypted || socket.stream?.encrypted;
         const protocol = isHttps ? 'https' : 'http';
@@ -64,6 +73,7 @@ function createHttpRequestHandler(options: {
             const url = new URL(req.url!);
             if (!url.hostname.endsWith(options.rootDomain)) {
                 console.log("Rejecting attempted proxy request to", req.url);
+                endpointLabel = 'proxy_reject';
                 res.writeHead(400, { connection: 'close' });
                 res.end();
                 return;
@@ -83,6 +93,7 @@ function createHttpRequestHandler(options: {
                 )?.toLowerCase();
 
                 if (sni && sni !== hostWithoutPort) {
+                    endpointLabel = 'misdirected';
                     res.writeHead(421, { 'content-type': 'text/plain' });
                     res.end(
                         `Misdirected Request: TLS connection was established for ${sni} but got a request for ${hostWithoutPort}`
@@ -99,6 +110,7 @@ function createHttpRequestHandler(options: {
 
         // --- A few initial administrative endpoints, that don't support CORS etc etc ---
         if (path.startsWith('/.well-known/acme-challenge/')) {
+            endpointLabel = 'acme_challenge';
             console.log("Got ACME challenge request", path);
             const token = path.split('/')[3];
             const response = await options.acmeChallengeCallback(token);
@@ -131,6 +143,7 @@ function createHttpRequestHandler(options: {
             });
 
             if (tlsOnlyParts.length > 0) {
+                endpointLabel = 'tls_redirect';
                 const httpsUrl = url.href.replace(/^http:/, 'https:');
                 res.writeHead(301, {
                     'location': httpsUrl,
@@ -148,6 +161,7 @@ function createHttpRequestHandler(options: {
         const isEndpointPrefix = hostnamePrefix && endpointPrefixes.includes(hostnamePrefix);
 
         if (path === '/' && !isEndpointPrefix) {
+            endpointLabel = 'docs';
             console.log(`Request to root page at ${path} (${hostnamePrefix || options.rootDomain})`);
             const html = getDocsHtml();
             res.writeHead(200, {
@@ -164,6 +178,7 @@ function createHttpRequestHandler(options: {
 
         if (req.method === 'OPTIONS') {
             // Handle preflight CORS requests for everything
+            endpointLabel = 'cors_preflight';
             res.writeHead(200);
             res.end();
             return;
@@ -177,6 +192,7 @@ function createHttpRequestHandler(options: {
         }
 
         const endpointNames = entries.map(e => e.endpoint.name).join(' → ');
+        endpointLabel = endpointNames;
         console.log(`Request to ${path}${
             hostnamePrefix ? ` ('${hostnamePrefix}' prefix)` : ` (${options.rootDomain})`
         } matched: ${endpointNames}`);

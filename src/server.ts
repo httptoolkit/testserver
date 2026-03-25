@@ -18,6 +18,7 @@ import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 import { DnsServer } from './dns-server.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
+import { startMetricsServer } from './metrics.js';
 
 declare module 'stream' {
     interface Duplex {
@@ -226,6 +227,14 @@ export async function createServer(options: ServerOptions = {}) {
 const wasRunDirectly = import.meta.filename === process?.argv[1];
 if (wasRunDirectly) {
     const ports = process.env.PORTS?.split(',') ?? [3000];
+
+    const metricsPort = process.env.METRICS_PORT
+        ? parseInt(process.env.METRICS_PORT)
+        : undefined;
+
+    if (metricsPort) {
+        startMetricsServer(metricsPort);
+    }
 
     createTcpHandler({
         domain: process.env.ROOT_DOMAIN,

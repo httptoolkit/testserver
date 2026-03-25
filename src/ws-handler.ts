@@ -5,6 +5,7 @@ import { StatusError } from '@httptoolkit/util';
 
 import { wsEndpoints } from './endpoints/endpoint-index.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
+import { wsConnectionsTotal } from './metrics.js';
 
 const FORCED_PROTOCOL = Symbol('ws-forced-protocol');
 
@@ -80,6 +81,8 @@ export function handleWebSocketUpgrade(
             req.headers['sec-websocket-protocol'] = '_';
         }
     }
+
+    wsConnectionsTotal.inc({ endpoint: endpointNames });
 
     wss.handleUpgrade(req, socket, head, async (ws) => {
         ws.on('error', (err) => {

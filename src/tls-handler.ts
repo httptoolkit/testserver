@@ -13,6 +13,7 @@ import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
 import { PROXY_PROTOCOL } from './proxy-protocol.js';
 import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
+import { tlsConnectionsTotal } from './metrics.js';
 
 const secureContextCache = new SecureContextCache();
 
@@ -219,6 +220,10 @@ class TlsConnectionHandler {
             }
 
             tlsSocket.on('secure', () => {
+                const endpointLabel = serverNameParts.length > 0
+                    ? serverNameParts.join('--')
+                    : 'default';
+                tlsConnectionsTotal.inc({ endpoint: endpointLabel });
                 this.connProcessor.processConnection(tlsSocket);
             });
 

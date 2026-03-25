@@ -8,6 +8,7 @@ primary_region = 'cdg'
 
 [env]
   PORTS = '8080'
+  METRICS_PORT = '9090'
   TRUST_PROXY_PROTOCOL = 'true'
   CERT_CACHE_DIR = '/usr/src/app/cert_dir'
 
@@ -60,6 +61,10 @@ primary_region = 'cdg'
 [mounts]
   source = "cert_data"
   destination = "/usr/src/app/cert_dir"
+
+[metrics]
+  port = 9090
+  path = "/metrics"
 
 [[vm]]
   memory = '512mb'
