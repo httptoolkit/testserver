@@ -19,6 +19,12 @@ export const status: HttpEndpoint = {
         if (isNaN(statusCode)) {
             throw new StatusError(400, `Invalid status code in ${path}`);
         }
+        if (statusCode >= 100 && statusCode < 200) {
+            throw new StatusError(400,
+                `1xx codes are informational and cannot be used as a final response. ` +
+                `Use /info/${statusCode} instead.`
+            );
+        }
         return true;
     },
     handle,

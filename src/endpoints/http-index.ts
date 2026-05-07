@@ -64,3 +64,4 @@ export * from './http/redirect.js';
 export * from './http/bytes.js';
 export * from './http/stream.js';
 export * from './http/stream-bytes.js';
+export * from './http/informational.js';
