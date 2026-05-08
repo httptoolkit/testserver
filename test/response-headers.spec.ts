@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as http2 from 'http2';
 import { expect } from 'chai';
 import { DestroyableServer, makeDestroyable } from 'destroyable-server';
 
@@ -56,5 +57,32 @@ describe("Response-headers endpoint", () => {
         );
         expect(response.status).to.equal(200);
         expect(await response.json()).to.deep.equal({});
+    });
+
+    it("returns duplicate single-value headers over HTTP/2", async () => {
+        const client = http2.connect(`http://localhost:${serverPort}`, { strictSingleValueFields: false });
+        try {
+            const request = client.request({
+                ':path': '/response-headers?X-Content-Type-Options=b&X-Content-Type-Options=c',
+                ':method': 'GET'
+            });
+            request.end();
+
+            const { status, rawHeaders } = await new Promise<{
+                status: number,
+                rawHeaders: string[]
+            }>((resolve) =>
+                request.on('response', (headers, _flags, rawHeaders) => resolve({
+                    status: headers[':status'] as number,
+                    rawHeaders
+                }))
+            );
+
+            expect(status).to.equal(200);
+            expect(rawHeaders).to.include.members(['x-content-type-options', 'b']);
+            expect(rawHeaders).to.include.members(['x-content-type-options', 'c']);
+        } finally {
+            client.close();
+        }
     });
 });

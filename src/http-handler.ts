@@ -257,21 +257,24 @@ export function createHttp2Handler(options: {
     rootDomain: string
 }) {
     const handleRequest = createHttpRequestHandler(options);
-    const handler = http2.createServer(async (req, res) => {
-        try {
-            await handleRequest(req, res);
-        } catch (e) {
-            console.error(e);
+    const handler = http2.createServer(
+        { strictSingleValueFields: false } as http2.ServerOptions,
+        async (req, res) => {
+            try {
+                await handleRequest(req, res);
+            } catch (e) {
+                console.error(e);
 
-            if (res.closed) return;
-            else if (res.headersSent) {
-                res.destroy();
-            } else {
-                res.writeHead(500);
-                res.end('HTTP handler failed');
+                if (res.closed) return;
+                else if (res.headersSent) {
+                    res.destroy();
+                } else {
+                    res.writeHead(500);
+                    res.end('HTTP handler failed');
+                }
             }
         }
-    });
+    );
 
     handler.on('error', (err) => console.error('HTTP handler error', err));
 

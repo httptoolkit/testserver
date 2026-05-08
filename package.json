@@ -50,7 +50,7 @@
     "@types/dns-packet": "^5.6.5",
     "@types/lodash": "^4.17.0",
     "@types/mocha": "^10.0.6",
-    "@types/node": "^22.15.30",
+    "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
     "chai": "^5.1.0",
     "destroyable-server": "^1.0.1",

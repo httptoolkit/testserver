@@ -6,7 +6,12 @@ import { EndpointMeta, EndpointGroup } from './groups.js';
 export type { EndpointMeta, EndpointGroup };
 
 export type HttpRequest = http.IncomingMessage | http2.Http2ServerRequest;
-export type HttpResponse = http.ServerResponse | http2.Http2ServerResponse;
+// The @types/node v24 writeHead overloads diverged between http and http2, breaking
+// union-type calls. We intersect with a compatible signature so call sites can use it.
+export type HttpResponse = (http.ServerResponse | http2.Http2ServerResponse) & {
+    writeHead(statusCode: number, headers?: http.OutgoingHttpHeaders): HttpResponse;
+    writeHead(statusCode: number, statusMessage: string, headers?: http.OutgoingHttpHeaders): HttpResponse;
+};
 
 export type HttpHandler = (
     req: HttpRequest,
