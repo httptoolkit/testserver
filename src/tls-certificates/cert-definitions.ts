@@ -9,13 +9,15 @@ export interface CertOptions {
 }
 
 export function calculateCertCacheKey(domain: string, options: CertOptions) {
-    return `${domain}+${
-        ([
-            'expired',
-            'revoked',
-            'selfSigned',
-        ] as const)
-        .filter((k: keyof CertOptions) => options[k])
-        .join('+')
-    }`;
+    const parts: string[] = ([
+        'expired',
+        'revoked',
+        'selfSigned',
+    ] as const).filter((k) => options[k]);
+
+    if (options.overridePrefix) {
+        parts.push(`override=${options.overridePrefix}`);
+    }
+
+    return `${domain}+${parts.join('+')}`;
 }
