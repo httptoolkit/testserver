@@ -175,7 +175,8 @@ function calculateCacheKey(domain: string, options: CertOptions) {
     return `${domain}+${([
         'expired',
         'revoked',
-        'selfSigned'
+        'selfSigned',
+        'incompleteChain'
     ] as const).filter((k: keyof CertOptions) => options[k]).join('+')}`
 }
 
@@ -199,7 +200,14 @@ const KEY_PAIR_ALGO = {
 interface CertGenerationOptions {
     selfSigned?: boolean;
     expired?: boolean;
+    incompleteChain?: boolean;
 }
+
+type IntermediateCA = {
+    cert: x509.X509Certificate,
+    key: CryptoKey,
+    pem: string
+};
 
 export class LocalCA {
     private caCert: x509.X509Certificate;
@@ -207,6 +215,8 @@ export class LocalCA {
     private options: CAOptions;
 
     private certInMemoryCache: { [domain: string]: LocallyGeneratedCertificate | undefined } = {};
+
+    private intermediateCA?: Promise<IntermediateCA>;
 
     private constructor(
         private caCertPem: string,
@@ -243,6 +253,60 @@ export class LocalCA {
         return new LocalCA(caOptions.cert.toString(), caCert, caKey, caOptions);
     }
     
+    private getIntermediateCA(): Promise<IntermediateCA> {
+        if (!this.intermediateCA) {
+            this.intermediateCA = this.createIntermediateCA();
+        }
+        return this.intermediateCA;
+    }
+
+    private async createIntermediateCA(): Promise<IntermediateCA> {
+        const keyPair = await crypto.subtle.generateKey(
+            { ...KEY_PAIR_ALGO, modulusLength: this.options.keyLength || 2048 },
+            true,
+            ["sign", "verify"]
+        ) as CryptoKeyPair;
+
+        const subjectDistinguishedName = new x509.Name([
+            { C: [this.options.countryName ?? 'XX'] },
+            { O: ['Testserver'] },
+            { CN: ['Test Intermediate CA'] }
+        ]).toString();
+
+        const notBefore = new Date();
+        notBefore.setDate(notBefore.getDate() - 1);
+        const notAfter = new Date();
+        notAfter.setFullYear(notAfter.getFullYear() + 1);
+
+        const cert = await x509.X509CertificateGenerator.create({
+            serialNumber: generateSerialNumber(),
+            subject: subjectDistinguishedName,
+            issuer: this.caCert.subject,
+            notBefore,
+            notAfter,
+            signingAlgorithm: KEY_PAIR_ALGO,
+            publicKey: keyPair.publicKey as CryptoKey,
+            signingKey: this.caKey,
+            extensions: [
+                new x509.BasicConstraintsExtension(true, 0, true),
+                new x509.KeyUsagesExtension(
+                    x509.KeyUsageFlags.keyCertSign |
+                    x509.KeyUsageFlags.digitalSignature |
+                    x509.KeyUsageFlags.cRLSign,
+                    true
+                ),
+                await x509.SubjectKeyIdentifierExtension.create(keyPair.publicKey as CryptoKey, false),
+                await x509.AuthorityKeyIdentifierExtension.create(this.caCert, false)
+            ]
+        });
+
+        return {
+            cert,
+            key: keyPair.privateKey as CryptoKey,
+            pem: cert.toString('pem')
+        };
+    }
+
     async generateCertificate(
         domain: string,
         options: CertGenerationOptions
@@ -282,9 +346,16 @@ export class LocalCA {
         }
 
         const subjectDistinguishedName = new x509.Name(subjectJsonNameParams).toString();
+
+        const intermediate = options.incompleteChain && !options.selfSigned
+            ? await this.getIntermediateCA()
+            : undefined;
+
         const issuerDistinguishedName = options.selfSigned
             ? subjectDistinguishedName
-            : this.caCert.subject;
+            : intermediate
+                ? intermediate.cert.subject
+                : this.caCert.subject;
 
         const notBefore = new Date();
         const notAfter = new Date();
@@ -325,7 +396,10 @@ export class LocalCA {
 
         // We don't include SubjectKeyIdentifierExtension as that's no longer recommended
         if (!options.selfSigned) {
-            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(this.caCert, false));
+            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(
+                intermediate ? intermediate.cert : this.caCert,
+                false
+            ));
         }
 
         const certificate = await x509.X509CertificateGenerator.create({
@@ -336,7 +410,11 @@ export class LocalCA {
             notAfter,
             signingAlgorithm: KEY_PAIR_ALGO,
             publicKey: leafKeyPair.publicKey,
-            signingKey: options.selfSigned ? leafKeyPair.privateKey as CryptoKey : this.caKey,
+            signingKey: options.selfSigned
+                ? leafKeyPair.privateKey as CryptoKey
+                : intermediate
+                    ? intermediate.key
+                    : this.caKey,
             extensions
         });
 
@@ -346,7 +424,9 @@ export class LocalCA {
                 await crypto.subtle.exportKey("pkcs8", leafKeyPair.privateKey as CryptoKey),
                 "PRIVATE KEY"
             ),
-            cert: certPem,
+            cert: intermediate
+                ? `${certPem.trimEnd()}\n${intermediate.pem.trimEnd()}\n`
+                : certPem,
             ca: options.selfSigned ? certPem : this.caCertPem // Use cached CA cert PEM
         };
 

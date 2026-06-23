@@ -62,6 +62,21 @@ export const untrustedRoot: TlsEndpoint = {
     }
 };
 
+export const incompleteChain: TlsEndpoint = {
+    sniPart: 'incomplete-chain',
+    configureCertOptions() {
+        return {
+            incompleteChain: true
+        };
+    },
+    meta: {
+        path: 'incomplete-chain',
+        description: 'Serves a TLS certificate without the required intermediate certificate.',
+        examples: ['https://incomplete-chain.testserver.host/'],
+        group: tlsCertificateModes
+    }
+};
+
 export const wrongHost: TlsEndpoint = {
     sniPart: 'wrong-host',
     configureCertOptions() {

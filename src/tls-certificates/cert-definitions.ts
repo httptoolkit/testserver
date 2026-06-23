@@ -6,6 +6,10 @@ export interface CertOptions {
     selfSigned?: boolean;
 
     overridePrefix?: string;
+
+    // This is a presentation difference only - cert is the same, we just don't
+    // send the full chain with it.
+    incompleteChain?: boolean;
 }
 
 export function calculateCertCacheKey(domain: string, options: CertOptions) {
@@ -20,4 +24,12 @@ export function calculateCertCacheKey(domain: string, options: CertOptions) {
     }
 
     return `${domain}+${parts.join('+')}`;
+}
+
+const CERT_PEM_PATTERN = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+export function extractLeafCertificate(certChainPem: string): string {
+    const leaf = certChainPem.match(CERT_PEM_PATTERN)?.[0];
+    if (!leaf) throw new Error('Could not find any certificate in chain PEM');
+    return leaf + '\n';
 }

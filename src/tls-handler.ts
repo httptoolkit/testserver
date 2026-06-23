@@ -8,7 +8,7 @@ import { getExtensionData } from 'read-tls-client-hello';
 
 import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
-import { CertOptions, calculateCertCacheKey } from './tls-certificates/cert-definitions.js';
+import { CertOptions, calculateCertCacheKey, extractLeafCertificate } from './tls-certificates/cert-definitions.js';
 import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
 import { PROXY_PROTOCOL } from './proxy-protocol.js';
@@ -23,10 +23,11 @@ function calculateContextCacheKey(
     tlsOptions: tls.SecureContextOptions
 ): string {
     const certKey = calculateCertCacheKey(domain, certOptions);
+    const chainKey = certOptions.incompleteChain ? '|incomplete-chain' : '';
     const tlsKey = Object.keys(tlsOptions).length > 0
         ? '|' + JSON.stringify(tlsOptions, Object.keys(tlsOptions).sort())
         : '';
-    return certKey + tlsKey;
+    return certKey + chainKey + tlsKey;
 }
 
 function getCertExpiry(certPem: string): number {
@@ -171,11 +172,19 @@ class TlsConnectionHandler {
 
             const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
                 const cert = await this.tlsConfig.generateCertificate(certDomain, certOptions);
+
+                const servedCert = certOptions.incompleteChain
+                    ? extractLeafCertificate(cert.cert)
+                    : cert.cert;
+                const servedCa = certOptions.incompleteChain
+                    ? undefined
+                    : cert.ca;
+
                 return {
                     context: tls.createSecureContext({
                         key: cert.key,
-                        cert: cert.cert,
-                        ca: cert.ca,
+                        cert: servedCert,
+                        ca: servedCa,
                         ...tlsOptions
                     }),
                     // Temporary certs (e.g. local CA fallback while ACME pending) get short cache
