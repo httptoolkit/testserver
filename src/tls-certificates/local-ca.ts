@@ -53,25 +53,15 @@ async function pemToCryptoKey(pem: string) {
 }
 
 /**
- * Generate a CA certificate for TLS.
- *
- * Returns a promise, for an object with key and cert properties,
- * containing the generated private key and certificate in PEM format.
+ * Generate a CA certificate (root or intermediate). Self-signs unless `signWith`
+ * (an issuing CA cert and key) is provided, in which case it issues a subordinate CA.
  */
-export async function generateCACertificate(options: {
-    commonName?: string,
-    organizationName?: string,
-    countryName?: string,
-    bits?: number
-} = {}) {
-    options = {
-        commonName: 'Test Certificate Authority',
-        organizationName: 'Testserver',
-        countryName: 'XX', // ISO-3166-1 alpha-2 'unknown country' code
-        bits: 2048,
-        ...options
-    };
-
+async function buildCaCertificate(options: {
+    subject: x509.JsonNameParams,
+    bits: number,
+    pathLenConstraint?: number, // undefined => no constraint
+    signWith?: { cert: x509.X509Certificate, key: CryptoKey } // omitted => self-signed
+}): Promise<{ keyPair: CryptoKeyPair, certificate: x509.X509Certificate }> {
     // We use RSA for now for maximum compatibility
     const keyAlgorithm = {
         name: "RSASSA-PKCS1-v1_5",
@@ -86,18 +76,7 @@ export async function generateCACertificate(options: {
         ["sign", "verify"]
     ) as CryptoKeyPair;
 
-    // Baseline requirements set a specific order for CA subject fields
-    const subjectNameParts: x509.JsonNameParams = [];
-    if (options.countryName) {
-        subjectNameParts.push({ C: [options.countryName] });
-    }
-    if (options.organizationName) {
-        subjectNameParts.push({ O: [options.organizationName] });
-    }
-    if (options.commonName) {
-        subjectNameParts.push({ CN: [options.commonName] });
-    }
-    const subjectDistinguishedName = new x509.Name(subjectNameParts).toString();
+    const subjectDistinguishedName = new x509.Name(options.subject).toString();
 
     const notBefore = new Date();
     // Make it valid for the last 24h - helps in cases where clocks slightly disagree
@@ -108,11 +87,7 @@ export async function generateCACertificate(options: {
     notAfter.setFullYear(notAfter.getFullYear() + 1);
 
     const extensions: x509.Extension[] = [
-        new x509.BasicConstraintsExtension(
-            true, // cA = true
-            undefined, // We don't set any path length constraint
-            true
-        ),
+        new x509.BasicConstraintsExtension(true, options.pathLenConstraint, true),
         new x509.KeyUsagesExtension(
             x509.KeyUsageFlags.keyCertSign |
             x509.KeyUsageFlags.digitalSignature |
@@ -122,25 +97,56 @@ export async function generateCACertificate(options: {
         await x509.SubjectKeyIdentifierExtension.create(keyPair.publicKey as CryptoKey, false)
     ];
 
+    if (options.signWith) {
+        extensions.push(await x509.AuthorityKeyIdentifierExtension.create(options.signWith.cert, false));
+    }
+
     const certificate = await x509.X509CertificateGenerator.create({
         serialNumber: generateSerialNumber(),
         subject: subjectDistinguishedName,
-        issuer: subjectDistinguishedName, // Self-signed
+        issuer: options.signWith ? options.signWith.cert.subject : subjectDistinguishedName,
         notBefore,
         notAfter,
         signingAlgorithm: keyAlgorithm,
         publicKey: keyPair.publicKey as CryptoKey,
-        signingKey: keyPair.privateKey as CryptoKey,
+        signingKey: options.signWith ? options.signWith.key : keyPair.privateKey as CryptoKey,
         extensions
     });
 
-    const privateKeyBuffer = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey as CryptoKey);
-    const privateKeyPem = arrayBufferToPem(privateKeyBuffer, "PRIVATE KEY");
-    const certificatePem = certificate.toString("pem");
+    return { keyPair, certificate };
+}
 
+/**
+ * Generate a self-signed root CA certificate for TLS.
+ *
+ * Returns a promise, for an object with key and cert properties,
+ * containing the generated private key and certificate in PEM format.
+ */
+export async function generateCACertificate(options: {
+    commonName?: string,
+    organizationName?: string,
+    countryName?: string,
+    bits?: number
+} = {}) {
+    const {
+        commonName = 'Test Certificate Authority',
+        organizationName = 'Testserver',
+        countryName = 'XX', // ISO-3166-1 alpha-2 'unknown country' code
+        bits = 2048
+    } = options;
+
+    // Baseline requirements set a specific order for CA subject fields
+    const subject: x509.JsonNameParams = [];
+    if (countryName) subject.push({ C: [countryName] });
+    if (organizationName) subject.push({ O: [organizationName] });
+    if (commonName) subject.push({ CN: [commonName] });
+
+    const { keyPair, certificate } = await buildCaCertificate({ subject, bits });
+
+    const privateKeyBuffer = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey as CryptoKey);
     return {
-        key: privateKeyPem,
-        cert: certificatePem
+        key: arrayBufferToPem(privateKeyBuffer, "PRIVATE KEY"),
+        cert: certificate.toString("pem")
     };
 }
 
@@ -175,8 +181,7 @@ function calculateCacheKey(domain: string, options: CertOptions) {
     return `${domain}+${([
         'expired',
         'revoked',
-        'selfSigned',
-        'incompleteChain'
+        'selfSigned'
     ] as const).filter((k: keyof CertOptions) => options[k]).join('+')}`
 }
 
@@ -200,7 +205,6 @@ const KEY_PAIR_ALGO = {
 interface CertGenerationOptions {
     selfSigned?: boolean;
     expired?: boolean;
-    incompleteChain?: boolean;
 }
 
 type IntermediateCA = {
@@ -261,49 +265,21 @@ export class LocalCA {
     }
 
     private async createIntermediateCA(): Promise<IntermediateCA> {
-        const keyPair = await crypto.subtle.generateKey(
-            { ...KEY_PAIR_ALGO, modulusLength: this.options.keyLength || 2048 },
-            true,
-            ["sign", "verify"]
-        ) as CryptoKeyPair;
-
-        const subjectDistinguishedName = new x509.Name([
-            { C: [this.options.countryName ?? 'XX'] },
-            { O: ['Testserver'] },
-            { CN: ['Test Intermediate CA'] }
-        ]).toString();
-
-        const notBefore = new Date();
-        notBefore.setDate(notBefore.getDate() - 1);
-        const notAfter = new Date();
-        notAfter.setFullYear(notAfter.getFullYear() + 1);
-
-        const cert = await x509.X509CertificateGenerator.create({
-            serialNumber: generateSerialNumber(),
-            subject: subjectDistinguishedName,
-            issuer: this.caCert.subject,
-            notBefore,
-            notAfter,
-            signingAlgorithm: KEY_PAIR_ALGO,
-            publicKey: keyPair.publicKey as CryptoKey,
-            signingKey: this.caKey,
-            extensions: [
-                new x509.BasicConstraintsExtension(true, 0, true),
-                new x509.KeyUsagesExtension(
-                    x509.KeyUsageFlags.keyCertSign |
-                    x509.KeyUsageFlags.digitalSignature |
-                    x509.KeyUsageFlags.cRLSign,
-                    true
-                ),
-                await x509.SubjectKeyIdentifierExtension.create(keyPair.publicKey as CryptoKey, false),
-                await x509.AuthorityKeyIdentifierExtension.create(this.caCert, false)
-            ]
+        const { keyPair, certificate } = await buildCaCertificate({
+            subject: [
+                { C: [this.options.countryName ?? 'XX'] },
+                { O: ['Testserver'] },
+                { CN: ['Test Intermediate CA'] }
+            ],
+            bits: this.options.keyLength || 2048,
+            pathLenConstraint: 0,
+            signWith: { cert: this.caCert, key: this.caKey }
         });
 
         return {
-            cert,
+            cert: certificate,
             key: keyPair.privateKey as CryptoKey,
-            pem: cert.toString('pem')
+            pem: certificate.toString('pem')
         };
     }
 
@@ -347,15 +323,13 @@ export class LocalCA {
 
         const subjectDistinguishedName = new x509.Name(subjectJsonNameParams).toString();
 
-        const intermediate = options.incompleteChain && !options.selfSigned
-            ? await this.getIntermediateCA()
-            : undefined;
+        const intermediate = options.selfSigned
+            ? undefined
+            : await this.getIntermediateCA();
 
-        const issuerDistinguishedName = options.selfSigned
-            ? subjectDistinguishedName
-            : intermediate
-                ? intermediate.cert.subject
-                : this.caCert.subject;
+        const issuerDistinguishedName = intermediate
+            ? intermediate.cert.subject
+            : subjectDistinguishedName;
 
         const notBefore = new Date();
         const notAfter = new Date();
@@ -395,11 +369,8 @@ export class LocalCA {
         ));
 
         // We don't include SubjectKeyIdentifierExtension as that's no longer recommended
-        if (!options.selfSigned) {
-            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(
-                intermediate ? intermediate.cert : this.caCert,
-                false
-            ));
+        if (intermediate) {
+            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(intermediate.cert, false));
         }
 
         const certificate = await x509.X509CertificateGenerator.create({
@@ -410,11 +381,9 @@ export class LocalCA {
             notAfter,
             signingAlgorithm: KEY_PAIR_ALGO,
             publicKey: leafKeyPair.publicKey,
-            signingKey: options.selfSigned
-                ? leafKeyPair.privateKey as CryptoKey
-                : intermediate
-                    ? intermediate.key
-                    : this.caKey,
+            signingKey: intermediate
+                ? intermediate.key
+                : leafKeyPair.privateKey as CryptoKey,
             extensions
         });
 
@@ -424,8 +393,10 @@ export class LocalCA {
                 await crypto.subtle.exportKey("pkcs8", leafKeyPair.privateKey as CryptoKey),
                 "PRIVATE KEY"
             ),
+            // Serve the full chain leaf -> intermediate -> root (matching production,
+            // which sends the root too). incomplete-chain later strips back to the leaf.
             cert: intermediate
-                ? `${certPem.trimEnd()}\n${intermediate.pem.trimEnd()}\n`
+                ? `${certPem.trimEnd()}\n${intermediate.pem.trimEnd()}\n${this.caCertPem.trimEnd()}\n`
                 : certPem,
             ca: options.selfSigned ? certPem : this.caCertPem // Use cached CA cert PEM
         };
@@ -439,6 +410,21 @@ export class LocalCA {
         return generatedCertificate;
     }
 
+    // An OCSP response must be signed by (and its CertID derived from) the cert's actual
+    // issuer. Non-self-signed leaves are issued by the intermediate, so resolve that;
+    // fall back to the root for anything else.
+    private async resolveOcspIssuer(
+        cert: x509.X509Certificate
+    ): Promise<{ cert: x509.X509Certificate, key: CryptoKey }> {
+        if (this.intermediateCA) {
+            const intermediate = await this.intermediateCA;
+            if (cert.issuer === intermediate.cert.subject) {
+                return { cert: intermediate.cert, key: intermediate.key };
+            }
+        }
+        return { cert: this.caCert, key: this.caKey };
+    }
+
     async getOcspResponse(certDer: Buffer): Promise<Buffer | null> {
         // Parse the certificate to get its serial number
         const certPem = `-----BEGIN CERTIFICATE-----\n${certDer.toString('base64')}\n-----END CERTIFICATE-----`;
@@ -449,12 +435,14 @@ export class LocalCA {
             return null;
         }
 
+        const { cert: issuerCert, key: issuerKey } = await this.resolveOcspIssuer(cert);
+
         if (isRevokedCert(cert)) {
             // Certificate is revoked - return revoked OCSP response
             return await createOcspResponse({
                 cert,
-                issuerCert: this.caCert,
-                issuerKey: this.caKey,
+                issuerCert,
+                issuerKey,
                 status: 'revoked',
                 revocationTime: new Date(), // Use current time as approximation
                 revocationReason: 1 // keyCompromise
@@ -464,8 +452,8 @@ export class LocalCA {
         // Certificate not revoked - return good status
         return await createOcspResponse({
             cert,
-            issuerCert: this.caCert,
-            issuerKey: this.caKey,
+            issuerCert,
+            issuerKey,
             status: 'good'
         });
     }

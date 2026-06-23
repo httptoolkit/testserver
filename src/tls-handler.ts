@@ -191,7 +191,7 @@ class TlsConnectionHandler {
                     // to allow the real cert to be picked up once available
                     expiry: cert.isTemporary
                         ? Date.now() + 5000
-                        : getCertExpiry(cert.cert)
+                        : getCertExpiry(servedCert)
                 };
             });
 

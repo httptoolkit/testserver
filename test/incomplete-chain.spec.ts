@@ -88,6 +88,15 @@ describe("incomplete-chain certificates", () => {
         expect(cert.issuer.CN).to.not.equal(cert.subject.CN);
     });
 
+    it("serves a normal (non-incomplete) cert with its full intermediate chain", async () => {
+        // By default local certs are issued via the intermediate and served as the
+        // full leaf -> intermediate -> root chain (only incomplete-chain strips it).
+        const { cert } = await connectAndGetChain('localhost');
+
+        expect(cert.issuer.CN).to.equal('Test Intermediate CA');
+        expect(presentedChainLength(cert)).to.be.greaterThan(1);
+    });
+
     it("presents no intermediate certificates alongside the leaf", async () => {
         const { cert } = await connectAndGetChain('incomplete-chain.localhost');
 
