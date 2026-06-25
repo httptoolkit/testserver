@@ -104,9 +104,13 @@ export class AcmeCA {
     ): Promise<AcmeGeneratedCertificate> {
         const { certOptions, forceRegenerate, attemptId } = options;
         const cacheKey = calculateCertCacheKey(domain, certOptions)
-        const cachedCert = this.certCache.getCert(cacheKey);
+        // Our cache is populated on startup & locally. Here we read through to the
+        // backing store, so we pick up certs issued elsewhere.
+        const cachedCert = forceRegenerate
+            ? undefined
+            : await this.certCache.fetchCert(cacheKey);
 
-        if (cachedCert && !options.forceRegenerate) {
+        if (cachedCert) {
             // If we have this cert in the cache, we generally want to use that.
 
             // Cert already expired?
@@ -115,10 +119,10 @@ export class AcmeCA {
                     return cachedCert;
                 }
 
-                // Expired - clear this data and get a new certificate somehow
+                // Expired - clear this data and force a fresh issuance.
                 console.log(`Renewing totally expired certificate for ${cacheKey} (${attemptId})`);
                 this.certCache.clearCache(cacheKey);
-                return this.getCertificate(domain, { attemptId, certOptions });
+                return this.getCertificate(domain, { forceRegenerate: true, attemptId, certOptions });
             }
 
             // If the cert expires soon and needs refreshing
@@ -146,8 +150,10 @@ export class AcmeCA {
             return cachedCert;
         }
 
-        if (!cachedCert) console.log(`No cached cert for ${cacheKey} (${attemptId})`);
-        else if (forceRegenerate) console.log(`Force regenerating cert for ${cacheKey} (${attemptId})`);
+        console.log(forceRegenerate
+            ? `Force regenerating cert for ${cacheKey} (${attemptId})`
+            : `No cached cert for ${cacheKey} (${attemptId})`
+        );
 
         if (this.pendingCertRenewals[cacheKey] && !forceRegenerate) {
             console.log(`Certificate generation already pending for ${cacheKey} (${attemptId}) from attempt ${

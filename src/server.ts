@@ -16,8 +16,9 @@ import { TLS_CLIENT_HELLO, type TlsClientHelloData } from './tls-client-hello.js
 import { AcmeCA, AcmeProvider } from './tls-certificates/acme.js';
 import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
+import { FilesystemCertStore } from './tls-certificates/fs-cert-store.js';
+import { S3CertStore, S3Config } from './tls-certificates/s3-cert-store.js';
 import { DnsServer } from './dns-server.js';
-import { tlsEndpoints } from './endpoints/endpoint-index.js';
 import { setDownloadableCertificates } from './endpoints/http/tls-certs.js';
 import { startMetricsServer } from './metrics.js';
 
@@ -40,6 +41,7 @@ export interface ServerOptions {
     acmeAccountKey?: string;
     proactiveCertDomains?: string[];
     certCacheDir?: string;
+    certStoreS3?: S3Config;
     localCaKey?: string;
     localCaCert?: string;
     dnsServer?: boolean;
@@ -52,11 +54,47 @@ function isWildcardCoverable(domain: string, rootDomain: string): boolean {
     return !prefix.includes('.'); // Single-level subdomain only
 }
 
+export function s3ConfigFromEnv(): S3Config | undefined {
+    const bucket = process.env.CERT_STORE_S3_BUCKET;
+    if (!bucket) return undefined;
+
+    const endpoint = process.env.AWS_ENDPOINT_URL_S3 ?? process.env.AWS_ENDPOINT_URL;
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if (!endpoint || !accessKeyId || !secretAccessKey) {
+        throw new Error(
+            'CERT_STORE_S3_BUCKET is set but the S3 connection is incomplete - need ' +
+            'AWS_ENDPOINT_URL_S3, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY'
+        );
+    }
+
+    return {
+        bucket,
+        endpoint,
+        region: process.env.AWS_REGION ?? 'auto',
+        accessKeyId,
+        secretAccessKey,
+        prefix: 'certs/'
+    };
+}
+
 async function generateTlsConfig(options: ServerOptions) {
     const rootDomain = options.domain ?? 'localhost';
 
-    const certCache = options.certCacheDir
-        ? new PersistentCertCache(options.certCacheDir)
+    if (options.certCacheDir && options.certStoreS3) {
+        throw new Error(
+            "Can't use both a local cert cache directory and an S3 cert store - " +
+            "set only one of CERT_CACHE_DIR or CERT_STORE_S3_BUCKET"
+        );
+    }
+
+    const certStoreBackend = options.certStoreS3
+        ? new S3CertStore(options.certStoreS3)
+        : options.certCacheDir
+            ? new FilesystemCertStore(options.certCacheDir)
+            : undefined;
+    const certCache = certStoreBackend
+        ? new PersistentCertCache(certStoreBackend)
         : undefined;
 
     // Use provided CA key/cert if available, otherwise generate a fresh one
@@ -69,22 +107,7 @@ async function generateTlsConfig(options: ServerOptions) {
         caCert = await generateCACertificate();
     }
 
-    if (certCache) {
-        const validSniParts = new Set(tlsEndpoints.map(e => e.sniPart));
-        await certCache.loadCache((domain) => { // Temp logic to clean up old cached certs
-            // Root domain and wildcard are always valid
-            if (domain === rootDomain || domain === `*.${rootDomain}`) return true;
-
-            // Strip root domain suffix to get the prefix
-            if (!domain.endsWith(`.${rootDomain}`)) return false;
-            const prefix = domain.slice(0, -rootDomain.length - 1);
-            if (!prefix) return false;
-
-            // Split by -- or . (same logic as getSNIPrefixParts)
-            const parts = prefix.includes('--') ? prefix.split('--') : prefix.split('.');
-            return parts.every(part => validSniParts.has(part));
-        });
-    }
+    if (certCache) await certCache.loadCache();
 
     const localCA = await LocalCA.create(caCert);
     const defaultCert = await localCA.generateCertificate(rootDomain, {});
@@ -113,8 +136,8 @@ async function generateTlsConfig(options: ServerOptions) {
     if (!options.domain) {
         throw new Error(`Can't enable ACME without configuring a domain (via $ROOT_DOMAIN)`);
     }
-    if (!options.certCacheDir || !AcmeCA) {
-        throw new Error(`Can't enable ACME without configuring a cert cache directory (via $CERT_CACHE_DIR)`);
+    if (!certCache || !AcmeCA) {
+        throw new Error(`Can't enable ACME without a cert store (via $CERT_CACHE_DIR or $CERT_STORE_S3_BUCKET)`);
     }
     if (!options.acmeAccountKey) {
         throw new Error(`Can't enable ACME without configuring an account key (via $ACME_ACCOUNT_KEY)`);
@@ -253,6 +276,7 @@ if (wasRunDirectly) {
         acmeProvider: process.env.ACME_PROVIDER as AcmeProvider | undefined,
         acmeAccountKey: process.env.ACME_ACCOUNT_KEY,
         certCacheDir: process.env.CERT_CACHE_DIR,
+        certStoreS3: s3ConfigFromEnv(),
         localCaKey: process.env.LOCAL_CA_KEY,
         localCaCert: process.env.LOCAL_CA_CERT,
         dnsServer: process.env.DNS_SERVER === 'true',
