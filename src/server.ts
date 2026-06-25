@@ -196,7 +196,8 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
 
     const httpConfig = {
         acmeChallengeCallback: tlsConfig.acmeChallenge,
-        rootDomain: options.domain ?? 'localhost'
+        rootDomain: options.domain ?? 'localhost',
+        usingPublicCA: !!options.acmeProvider
     };
 
     const httpHandler = createHttp1Handler(httpConfig);

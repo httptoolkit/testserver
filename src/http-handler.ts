@@ -5,6 +5,7 @@ import { getExtensionData } from 'read-tls-client-hello';
 
 import { httpEndpoints, tlsEndpoints } from './endpoints/endpoint-index.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
+import { CertOptions } from './tls-certificates/cert-definitions.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 import { getDocsHtml } from './docs-page.js';
@@ -50,10 +51,48 @@ type RequestHandler = (
     res: HttpResponse
 ) => Promise<void>;
 
-function createHttpRequestHandler(options: {
-    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
-    rootDomain: string
-}): RequestHandler {
+interface HttpHandlerOptions {
+    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>;
+    rootDomain: string;
+    usingPublicCA: boolean;
+}
+
+function getCombinedCertOptions(prefixParts: string[]): CertOptions {
+    let certOptions: CertOptions = {};
+    for (const part of prefixParts) {
+        const endpoint = tlsEndpoints.find(e => e.sniPart === part);
+        if (endpoint?.configureCertOptions) {
+            certOptions = Object.assign(certOptions, endpoint.configureCertOptions());
+        }
+    }
+    return certOptions;
+}
+
+/**
+ * Local-only endpoints (requiredType 'local') can't be served by a publicly-trusted CA,
+ * so when one is in use we're implicitly untrusted-root. We make that explicit: we redirect
+ * to *--untrusted-root in these cases. Excludes self-signed/untrusted-root itself, which
+ * are already explicit by design.
+ */
+export function getLocalOnlyRedirectHost(
+    prefixParts: string[],
+    options: { usingPublicCA: boolean, rootDomain: string }
+): string | undefined {
+    if (!options.usingPublicCA) return undefined;
+
+    const certOptions = getCombinedCertOptions(prefixParts);
+    if (
+        certOptions.requiredType !== 'local' ||
+        certOptions.selfSigned ||
+        prefixParts.includes('untrusted-root')
+    ) {
+        return undefined;
+    }
+
+    return `${[...prefixParts, 'untrusted-root'].join('--')}.${options.rootDomain}`;
+}
+
+function createHttpRequestHandler(options: HttpHandlerOptions): RequestHandler {
     return async function handleRequest(req, res) {
         let endpointLabel = 'unknown';
 
@@ -130,27 +169,34 @@ function createHttpRequestHandler(options: {
             ? url.hostname.slice(0, -options.rootDomain.length - 1)
             : undefined;
 
-        // If this is a plain HTTP request to a TLS-configuring subdomain, redirect it with
-        // a clear message — the TLS settings would be silently ignored over plain HTTP.
-        if (protocol === 'http' && hostnamePrefix) {
+        if (hostnamePrefix) {
             const prefixParts = hostnamePrefix.includes('--')
                 ? hostnamePrefix.split('--')
                 : hostnamePrefix.split('.');
 
-            const tlsOnlyParts = prefixParts.filter(part => {
+            // Plain HTTP to a TLS-configuring subdomain: the TLS settings would be
+            // silently ignored over plain HTTP, so redirect to HTTPS.
+            const tlsOnly = protocol === 'http' && prefixParts.some(part => {
                 const endpoint = tlsEndpoints.find(e => e.sniPart === part);
                 return endpoint && !endpoint.plainTextAllowed;
             });
 
-            if (tlsOnlyParts.length > 0) {
-                endpointLabel = 'tls_redirect';
-                const httpsUrl = url.href.replace(/^http:/, 'https:');
+            // Local-only endpoints under a public CA are implicitly untrusted-root;
+            // redirect to the explicit host so that's clear from the URL.
+            const untrustedRootHost = getLocalOnlyRedirectHost(prefixParts, options);
+
+            if (tlsOnly || untrustedRootHost) {
+                endpointLabel = untrustedRootHost ? 'untrusted_root_redirect' : 'tls_redirect';
+                if (untrustedRootHost) url.hostname = untrustedRootHost;
+                url.protocol = 'https:';
+                const target = url.href;
                 res.writeHead(301, {
-                    'location': httpsUrl,
+                    'location': target,
                     'content-type': 'text/plain'
                 });
-                res.end(
-                    `This endpoint requires HTTPS. Redirecting to ${httpsUrl}`
+                res.end(untrustedRootHost
+                    ? `This local-only endpoint is served by an untrusted CA. Redirecting to the explicit ${target}`
+                    : `This endpoint requires HTTPS. Redirecting to ${target}`
                 );
                 return;
             }
@@ -204,10 +250,7 @@ function createHttpRequestHandler(options: {
     }
 }
 
-export function createHttp1Handler(options: {
-    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
-    rootDomain: string
-}) {
+export function createHttp1Handler(options: HttpHandlerOptions) {
     const handleRequest = createHttpRequestHandler(options);
     const handler = new http.Server(async (req, res) => {
         // Track concurrent requests on this socket to detect pipelining
@@ -252,10 +295,7 @@ export function createHttp1Handler(options: {
     return handler;
 }
 
-export function createHttp2Handler(options: {
-    acmeChallengeCallback: (token: string) => MaybePromise<string | undefined>,
-    rootDomain: string
-}) {
+export function createHttp2Handler(options: HttpHandlerOptions) {
     const handleRequest = createHttpRequestHandler(options);
     const handler = http2.createServer(
         { strictSingleValueFields: false } as http2.ServerOptions,
