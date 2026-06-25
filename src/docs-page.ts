@@ -506,7 +506,8 @@ export function getDocsHtml(): string {
             intro: [
                 'The TLS endpoint(s) to use are specified by subdomain, e.g. <code>expired.{domain}</code>.',
                 'Endpoints can be combined using double-dashes, e.g. <code>expired--revoked--http2--tls-v1-2.{domain}</code> will return an expired and revoked certificate, use TLSv1.2, and then negotiate HTTP/2 on the connection.',
-                'These can also be combined with the HTTP or WebSocket handlers above, which can be independently specified in the request path.'
+                'These can also be combined with the HTTP or WebSocket handlers above, which can be independently specified in the request path.',
+                'The <code>untrusted-root</code>, <code>intermediate</code> & <code>self-signed</code> certificates used by some endpoints here can be downloaded separately from the <code>/tls/certs/*</code> HTTP endpoints.'
             ],
             groups: groupEndpoints(tlsEndpoints, tlsGroupOrder),
             type: 'tls'

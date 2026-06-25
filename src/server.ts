@@ -18,6 +18,7 @@ import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 import { DnsServer } from './dns-server.js';
 import { tlsEndpoints } from './endpoints/endpoint-index.js';
+import { setDownloadableCertificates } from './endpoints/http/tls-certs.js';
 import { startMetricsServer } from './metrics.js';
 
 declare module 'stream' {
@@ -192,6 +193,15 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
     );
 
     const tlsConfig = await generateTlsConfig(options);
+    // Expose the local certs for download (see /tls/certs/*). Lazy, so we don't block
+    // startup generating certs that may never be downloaded.
+    setDownloadableCertificates({
+        'untrusted-root': () => Promise.resolve(tlsConfig.ca),
+        'intermediate': () => tlsConfig.localCA.getIntermediateCertificatePem(),
+        'self-signed': () => tlsConfig.localCA
+            .generateCertificate(tlsConfig.rootDomain, { selfSigned: true })
+            .then((cert) => cert.cert)
+    });
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 
     const httpConfig = {

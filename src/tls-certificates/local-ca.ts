@@ -266,6 +266,10 @@ export class LocalCA {
         return this.intermediateCA;
     }
 
+    async getIntermediateCertificatePem(): Promise<string> {
+        return (await this.getIntermediateCA()).pem;
+    }
+
     private async createIntermediateCA(): Promise<IntermediateCA> {
         const { keyPair, certificate } = await buildCaCertificate({
             subject: [

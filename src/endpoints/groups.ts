@@ -58,9 +58,9 @@ export const httpDynamicData: EndpointGroup = {
     name: 'Dynamic Data'
 };
 
-export const httpTlsInspection: EndpointGroup = {
-    id: 'tls-inspection',
-    name: 'TLS Inspection'
+export const httpTls: EndpointGroup = {
+    id: 'tls',
+    name: 'TLS'
 };
 
 export const httpErrors: EndpointGroup = {
@@ -78,7 +78,7 @@ export const httpGroupOrder: EndpointGroup[] = [
     httpResponseFormats,
     httpResponseEncoding,
     httpDynamicData,
-    httpTlsInspection,
+    httpTls,
     httpErrors
 ];
 

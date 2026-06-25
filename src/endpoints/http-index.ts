@@ -41,6 +41,7 @@ export * from './http/robots.txt.js';
 export * from './http/delay.js';
 export * from './http/cookies.js'
 export { basicAuth } from './http/basic-auth.js';
+export { tlsCertificates } from './http/tls-certs.js';
 export * from './http/json.js';
 export * from './http/xml.js';
 export * from './http/trailers.js';
