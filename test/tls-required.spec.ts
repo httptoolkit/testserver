@@ -33,6 +33,7 @@ describe("TLS-required endpoints over plain HTTP", () => {
             'untrusted-root',
             'wrong-host',
             'incomplete-chain',
+            'no-common-name',
             'http2',
             'http1'
         ]) {

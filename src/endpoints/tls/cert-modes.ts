@@ -62,6 +62,23 @@ export const untrustedRoot: TlsEndpoint = {
     }
 };
 
+export const noCommonName: TlsEndpoint = {
+    sniPart: 'no-common-name',
+    configureCertOptions() {
+        return {
+            // We can only control this for local CAs
+            requiredType: 'local',
+            noCommonName: true
+        };
+    },
+    meta: {
+        path: 'no-common-name',
+        description: 'Serves a TLS certificate with no Common Name (Subject Alternative Name only).',
+        examples: ['https://no-common-name.testserver.host/'],
+        group: tlsCertificateModes
+    }
+};
+
 export const incompleteChain: TlsEndpoint = {
     sniPart: 'incomplete-chain',
     configureCertOptions() {

@@ -181,7 +181,8 @@ function calculateCacheKey(domain: string, options: CertOptions) {
     return `${domain}+${([
         'expired',
         'revoked',
-        'selfSigned'
+        'selfSigned',
+        'noCommonName'
     ] as const).filter((k: keyof CertOptions) => options[k]).join('+')}`
 }
 
@@ -205,6 +206,7 @@ const KEY_PAIR_ALGO = {
 interface CertGenerationOptions {
     selfSigned?: boolean;
     expired?: boolean;
+    noCommonName?: boolean;
 }
 
 type IntermediateCA = {
@@ -317,7 +319,8 @@ export class LocalCA {
 
         // Apply BR-required order: countryName, then commonName
         subjectJsonNameParams.push({ C: [this.options.countryName ?? 'XX'] });
-        if (domain[0] !== '*') { // Skip CN for wildcards as they cannot use them
+        // Skip CN for wildcards (they cannot use it) and no-common-name certs
+        if (domain[0] !== '*' && !options.noCommonName) {
             subjectJsonNameParams.push({ CN: [domain] });
         }
 

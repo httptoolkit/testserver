@@ -7,6 +7,8 @@ export interface CertOptions {
 
     overridePrefix?: string;
 
+    noCommonName?: boolean;
+
     // This is a presentation difference only - cert is the same, we just don't
     // send the full chain with it.
     incompleteChain?: boolean;
@@ -17,6 +19,7 @@ export function calculateCertCacheKey(domain: string, options: CertOptions) {
         'expired',
         'revoked',
         'selfSigned',
+        'noCommonName',
     ] as const).filter((k) => options[k]);
 
     if (options.overridePrefix) {
