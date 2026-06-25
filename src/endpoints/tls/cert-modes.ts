@@ -73,7 +73,7 @@ export const noCommonName: TlsEndpoint = {
     },
     meta: {
         path: 'no-common-name',
-        description: 'Serves a TLS certificate with no Common Name (Subject Alternative Name only).',
+        description: 'Serves a TLS certificate with no Common Name (Subject Alternative Name only). Local CA only.',
         examples: ['https://no-common-name.testserver.host/'],
         group: tlsCertificateModes
     }
