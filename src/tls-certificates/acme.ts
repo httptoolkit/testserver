@@ -261,10 +261,10 @@ export class AcmeCA {
                     const fqdn = `_acme-challenge.${authz.identifier.value}`;
 
                     console.log(`Completing dns-01 challenge for ${authz.identifier.value} (${attemptId})`);
-                    this.dnsServer!.setTxtRecord(fqdn, keyAuthorization);
+                    await this.dnsServer!.setTxtRecord(fqdn, keyAuthorization);
                     await this.acmeClient.completeChallenge(challenge);
                     await this.acmeClient.waitForValidStatus(challenge);
-                    this.dnsServer!.removeTxtRecord(fqdn, keyAuthorization);
+                    await this.dnsServer!.removeTxtRecord(fqdn, keyAuthorization);
                 } else {
                     const challenge = authz.challenges.find(c => c.type === 'http-01');
                     if (!challenge) throw new Error(`No http-01 challenge found for ${authz.identifier.value} (${attemptId})`);
@@ -288,7 +288,7 @@ export class AcmeCA {
                 skipChallengeVerification: true,
                 challengeCreateFn: isWildcard
                     ? async (_authz, _challenge, keyAuthorization) => {
-                        this.dnsServer!.setTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
+                        await this.dnsServer!.setTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
                     }
                     : async () => {
                         // HTTP-01 challenge responses are stateless - getChallengeResponse()
@@ -296,7 +296,7 @@ export class AcmeCA {
                     },
                 challengeRemoveFn: isWildcard
                     ? async (_authz, _challenge, keyAuthorization) => {
-                        this.dnsServer!.removeTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
+                        await this.dnsServer!.removeTxtRecord(`_acme-challenge.${rootDomain}`, keyAuthorization);
                     }
                     : async () => {}
             });

@@ -18,6 +18,7 @@ import { LocalCA, generateCACertificate } from './tls-certificates/local-ca.js';
 import { PersistentCertCache } from './tls-certificates/cert-cache.js';
 import { FilesystemCertStore } from './tls-certificates/fs-cert-store.js';
 import { S3CertStore, S3Config } from './tls-certificates/s3-cert-store.js';
+import { S3ChallengeStore } from './tls-certificates/s3-challenge-store.js';
 import { DnsServer } from './dns-server.js';
 import { setDownloadableCertificates } from './endpoints/http/tls-certs.js';
 import { startMetricsServer } from './metrics.js';
@@ -149,7 +150,12 @@ async function generateTlsConfig(options: ServerOptions) {
     if (options.dnsServer) {
         // Fly.io requires UDP to bind to 'fly-global-services' instead of 0.0.0.0
         const dnsBindAddress = process.env.FLY_APP_NAME ? 'fly-global-services' : '0.0.0.0';
-        dnsServer = new DnsServer(53, dnsBindAddress);
+        // Share challenge records across servers so any machine can answer a DNS-01
+        // validation, regardless of which machine is performing the issuance.
+        const challengeStore = options.certStoreS3
+            ? new S3ChallengeStore({ ...options.certStoreS3, prefix: 'acme-challenges/' })
+            : undefined;
+        dnsServer = new DnsServer(53, dnsBindAddress, challengeStore);
         await dnsServer.listen();
     }
 

@@ -22,7 +22,19 @@ export interface S3Config {
     prefix?: string; // optional key prefix, e.g. 'certs/'
 }
 
-function httpStatus(e: unknown): number | undefined {
+export function createS3Client(config: S3Config): S3Client {
+    return new S3Client({
+        endpoint: config.endpoint,
+        region: config.region,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        forcePathStyle: true,
+        // Don't add or require integrity checksums, for non-AWS compatibility
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED'
+    });
+}
+
+export function httpStatus(e: unknown): number | undefined {
     return (e as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
 }
 
@@ -35,15 +47,7 @@ export class S3CertStore implements CertStoreBackend {
     constructor(config: S3Config) {
         this.bucket = config.bucket;
         this.prefix = config.prefix ?? '';
-        this.client = new S3Client({
-            endpoint: config.endpoint,
-            region: config.region,
-            credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-            forcePathStyle: true,
-            // Don't add or require integrity checksums, for non-AWS compatibility
-            requestChecksumCalculation: 'WHEN_REQUIRED',
-            responseChecksumValidation: 'WHEN_REQUIRED'
-        });
+        this.client = createS3Client(config);
     }
 
     private objectKey(cacheKey: string): string {
