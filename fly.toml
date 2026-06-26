@@ -10,7 +10,7 @@ primary_region = 'cdg'
   PORTS = '8080'
   METRICS_PORT = '9090'
   TRUST_PROXY_PROTOCOL = 'true'
-  CERT_CACHE_DIR = '/usr/src/app/cert_dir'
+  CERT_STORE_S3_BUCKET = 'testserver-certs' # (AWS_* S3 auth comes from `fly storage create`)
 
   # If deploying a separate instance and wanting real certificates, customize these:
   ROOT_DOMAIN = 'testserver.host'
@@ -55,12 +55,6 @@ primary_region = 'cdg'
 
   [[services.ports]]
     port = 53
-
-# If we want to scale out within a single region, where there's already an app in the same region
-# using this volume, we need to fork it and create another with the same name.
-[mounts]
-  source = "cert_data"
-  destination = "/usr/src/app/cert_dir"
 
 [metrics]
   port = 9090
