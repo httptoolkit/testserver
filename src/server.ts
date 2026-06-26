@@ -155,6 +155,9 @@ async function generateTlsConfig(options: ServerOptions) {
         const challengeStore = options.certStoreS3
             ? new S3ChallengeStore({ ...options.certStoreS3, prefix: 'acme-challenges/' })
             : undefined;
+        // Clear out challenge records left behind by failed issuances on startup
+        challengeStore?.reapExpired()
+            .catch((e) => console.warn('Failed to reap expired ACME challenges:', e));
         dnsServer = new DnsServer(53, dnsBindAddress, challengeStore);
         await dnsServer.listen();
     }

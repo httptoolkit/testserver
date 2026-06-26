@@ -79,6 +79,18 @@ describe("S3ChallengeStore", () => {
         await expiring.set('_acme-challenge.example.com', 'token-1');
         expect(await store.get('_acme-challenge.example.com')).to.deep.equal([]);
     });
+
+    it("reaps expired records but keeps live ones", async () => {
+        const expiring = new S3ChallengeStore(challengeConfig(), -1);
+        await store.set('_acme-challenge.keep.example', 'fresh');
+        await expiring.set('_acme-challenge.gone.example', 'stale');
+        expect(mock.objects.size).to.equal(2);
+
+        await store.reapExpired();
+
+        expect(mock.objects.size).to.equal(1);
+        expect(await store.get('_acme-challenge.keep.example')).to.deep.equal(['fresh']);
+    });
 });
 
 describe("DnsServer challenge coordination", () => {

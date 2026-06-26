@@ -70,30 +70,59 @@ export class S3ChallengeStore implements ChallengeStore {
     }
 
     async get(fqdn: string): Promise<string[]> {
+        const now = Date.now();
+        const entries = await this.listRecords(this.fqdnPrefix(fqdn));
+        return entries
+            .map((e) => e.record)
+            .filter((r): r is StoredChallenge => !!r && r.expiry > now)
+            .map((r) => r.value);
+    }
+
+    async reapExpired(): Promise<void> {
+        const now = Date.now();
+        const entries = await this.listRecords(this.prefix);
+        await Promise.all(entries
+            .filter(({ record }) => !record || record.expiry <= now)
+            .map(({ key }) => this.client.send(new DeleteObjectCommand({
+                Bucket: this.bucket,
+                Key: key
+            })))
+        );
+    }
+
+    private async listRecords(
+        prefix: string
+    ): Promise<Array<{ key: string, record: StoredChallenge | undefined }>> {
         const keys: string[] = [];
         for await (const page of paginateListObjectsV2(
             { client: this.client },
-            { Bucket: this.bucket, Prefix: this.fqdnPrefix(fqdn) }
+            { Bucket: this.bucket, Prefix: prefix }
         )) {
             for (const obj of page.Contents ?? []) {
                 if (obj.Key) keys.push(obj.Key);
             }
         }
 
-        const records = await Promise.all(keys.map(async (key) => {
-            try {
-                const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-                const body = await res.Body?.transformToString();
-                return body ? JSON.parse(body) as StoredChallenge : undefined;
-            } catch (e) {
-                if (httpStatus(e) === 404) return undefined; // Raced with a concurrent removal
-                throw e;
-            }
-        }));
+        return Promise.all(keys.map(async (key) => ({
+            key,
+            record: await this.readRecord(key)
+        })));
+    }
 
-        const now = Date.now();
-        return records
-            .filter((r): r is StoredChallenge => !!r && r.expiry > now)
-            .map((r) => r.value);
+    private async readRecord(key: string): Promise<StoredChallenge | undefined> {
+        let body: string | undefined;
+        try {
+            const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+            body = await res.Body?.transformToString();
+        } catch (e) {
+            if (httpStatus(e) === 404) return undefined; // Raced with a concurrent removal
+            throw e;
+        }
+        if (!body) return undefined;
+        try {
+            return JSON.parse(body) as StoredChallenge;
+        } catch {
+            return undefined; // Corrupt - treat as absent, so reapExpired clears it
+        }
     }
 }
