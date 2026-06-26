@@ -160,6 +160,14 @@ function generateSerialNumber() {
     return '1' + crypto.randomUUID().replace(/-/g, '');
 }
 
+// A certificate must not outlive its issuer, otherwise the chain stops validating once the
+// issuer expires (even while the leaf itself is still in date). Cap the leaf accordingly.
+export function clampNotAfter(notAfter: Date, issuerNotAfter: Date): Date {
+    return notAfter.getTime() > issuerNotAfter.getTime()
+        ? new Date(issuerNotAfter.getTime())
+        : notAfter;
+}
+
 // Check if a certificate's domain indicates it should be treated as revoked
 function isRevokedCert(cert: x509.X509Certificate): boolean {
     const sanExt = cert.getExtension(x509.SubjectAlternativeNameExtension);
@@ -434,6 +442,10 @@ export class LocalCA {
             notAfter.setFullYear(notAfter.getFullYear() + 1); // Valid for 1 year
         }
 
+        const effectiveNotAfter = intermediate
+            ? clampNotAfter(notAfter, intermediate.cert.notAfter)
+            : notAfter;
+
         const extensions: x509.Extension[] = [];
         extensions.push(new x509.BasicConstraintsExtension(false, undefined, true));
         extensions.push(new x509.KeyUsagesExtension(
@@ -470,7 +482,7 @@ export class LocalCA {
             subject: subjectDistinguishedName,
             issuer: issuerDistinguishedName,
             notBefore,
-            notAfter,
+            notAfter: effectiveNotAfter,
             signingAlgorithm: KEY_PAIR_ALGO,
             publicKey: leafKeyPair.publicKey,
             signingKey: intermediate

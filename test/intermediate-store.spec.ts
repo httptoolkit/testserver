@@ -4,8 +4,22 @@ import * as fs from 'node:fs/promises';
 
 import { expect } from 'chai';
 
-import { LocalCA, generateCACertificate } from '../src/tls-certificates/local-ca.js';
+import { LocalCA, generateCACertificate, clampNotAfter } from '../src/tls-certificates/local-ca.js';
 import { FilesystemCertStore } from '../src/tls-certificates/fs-cert-store.js';
+
+describe("clampNotAfter", () => {
+    it("caps a leaf expiry at the issuer's expiry", () => {
+        const issuer = new Date('2030-01-01T00:00:00Z');
+        const leaf = new Date('2031-01-01T00:00:00Z'); // Would outlive the issuer
+        expect(clampNotAfter(leaf, issuer).getTime()).to.equal(issuer.getTime());
+    });
+
+    it("leaves an earlier leaf expiry untouched", () => {
+        const issuer = new Date('2030-01-01T00:00:00Z');
+        const leaf = new Date('2029-06-01T00:00:00Z');
+        expect(clampNotAfter(leaf, issuer)).to.equal(leaf);
+    });
+});
 
 describe("LocalCA intermediate persistence", () => {
 
