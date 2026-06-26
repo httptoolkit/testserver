@@ -110,7 +110,7 @@ async function generateTlsConfig(options: ServerOptions) {
 
     if (certCache) await certCache.loadCache();
 
-    const localCA = await LocalCA.create(caCert);
+    const localCA = await LocalCA.create(caCert, certStoreBackend);
     const defaultCert = await localCA.generateCertificate(rootDomain, {});
 
     if (!options.acmeProvider) {

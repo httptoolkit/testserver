@@ -5,6 +5,7 @@ import * as x509 from '@peculiar/x509';
 import * as asn1X509 from '@peculiar/asn1-x509';
 import * as asn1Schema from '@peculiar/asn1-schema';
 import { CertOptions } from './cert-definitions.js';
+import { CertStoreBackend, CachedCertificate, certObjectId } from './cert-cache.js';
 
 const crypto = globalThis.crypto;
 
@@ -60,6 +61,7 @@ async function buildCaCertificate(options: {
     subject: x509.JsonNameParams,
     bits: number,
     pathLenConstraint?: number, // undefined => no constraint
+    lifespanYears?: number, // defaults to 1
     signWith?: { cert: x509.X509Certificate, key: CryptoKey } // omitted => self-signed
 }): Promise<{ keyPair: CryptoKeyPair, certificate: x509.X509Certificate }> {
     // We use RSA for now for maximum compatibility
@@ -84,7 +86,7 @@ async function buildCaCertificate(options: {
 
     const notAfter = new Date();
     // Valid for the next year by default.
-    notAfter.setFullYear(notAfter.getFullYear() + 1);
+    notAfter.setFullYear(notAfter.getFullYear() + (options.lifespanYears ?? 1));
 
     const extensions: x509.Extension[] = [
         new x509.BasicConstraintsExtension(true, options.pathLenConstraint, true),
@@ -215,6 +217,13 @@ type IntermediateCA = {
     pem: string
 };
 
+// The intermediate is persisted and shared across servers, so it's long-lived (rather than
+// the 1-year default) to avoid unnecessary rotation, but well within the root's lifetime.
+const INTERMEDIATE_LIFESPAN_YEARS = 6;
+// Regenerate once an intermediate is within this margin of expiry.
+const INTERMEDIATE_RENEWAL_MARGIN_MS = 1000 * 60 * 60 * 24 * 30;
+const INTERMEDIATE_CACHE_DOMAIN = 'intermediate-ca';
+
 export class LocalCA {
     private caCert: x509.X509Certificate;
     private caKey: CryptoKey;
@@ -228,7 +237,8 @@ export class LocalCA {
         private caCertPem: string,
         caCert: x509.X509Certificate,
         caKey: CryptoKey,
-        caOptions: CAOptions
+        caOptions: CAOptions,
+        private certStore?: CertStoreBackend
     ) {
         this.caCert = caCert;
         this.caKey = caKey;
@@ -236,7 +246,8 @@ export class LocalCA {
     }
 
     static async create(
-        caOptions: CAOptions
+        caOptions: CAOptions,
+        certStore?: CertStoreBackend
     ): Promise<LocalCA> {
         // Parse the CA cert and key
         const caCert = new x509.X509Certificate(caOptions.cert.toString());
@@ -256,18 +267,91 @@ export class LocalCA {
             };
         }
 
-        return new LocalCA(caOptions.cert.toString(), caCert, caKey, caOptions);
+        return new LocalCA(caOptions.cert.toString(), caCert, caKey, caOptions, certStore);
     }
     
     private getIntermediateCA(): Promise<IntermediateCA> {
         if (!this.intermediateCA) {
-            this.intermediateCA = this.createIntermediateCA();
+            this.intermediateCA = this.loadOrCreateIntermediateCA();
         }
         return this.intermediateCA;
     }
 
     async getIntermediateCertificatePem(): Promise<string> {
         return (await this.getIntermediateCA()).pem;
+    }
+
+    // The intermediate is keyed by the root that signs it, so a different root gets its
+    // own intermediate and a stored one is never paired with the wrong root.
+    private intermediateCacheKey(): string {
+        return `intermediate+${certObjectId(this.caCertPem)}`;
+    }
+
+    private async loadOrCreateIntermediateCA(): Promise<IntermediateCA> {
+        if (!this.certStore) return this.createIntermediateCA();
+
+        const cacheKey = this.intermediateCacheKey();
+
+        const stored = await this.certStore.read(cacheKey);
+        if (stored && this.isIntermediateUsable(stored)) {
+            const parsed = await this.tryParseStoredIntermediate(stored);
+            if (parsed) return parsed;
+        }
+
+        const generated = await this.createIntermediateCA();
+        const record = await this.intermediateToRecord(generated, cacheKey);
+
+        if (stored) {
+            // The stored intermediate is expired or unusable - replace it.
+            await this.certStore.write(record);
+            console.log('Renewed intermediate CA in the shared cert store');
+            return generated;
+        }
+
+        // No intermediate stored yet - create it race-safely. If another server beat us
+        // to it, adopt theirs so the whole fleet converges on a single intermediate.
+        if (await this.certStore.writeIfAbsent(record)) {
+            console.log('Stored newly generated intermediate CA in the shared cert store');
+            return generated;
+        }
+
+        const winner = await this.certStore.read(cacheKey);
+        if (winner && this.isIntermediateUsable(winner)) {
+            const parsed = await this.tryParseStoredIntermediate(winner);
+            if (parsed) {
+                console.log('Adopted intermediate CA created concurrently by another server');
+                return parsed;
+            }
+        }
+        return generated;
+    }
+
+    private isIntermediateUsable(stored: CachedCertificate): boolean {
+        return stored.expiry - Date.now() > INTERMEDIATE_RENEWAL_MARGIN_MS;
+    }
+
+    private async tryParseStoredIntermediate(stored: CachedCertificate): Promise<IntermediateCA | undefined> {
+        try {
+            return {
+                cert: new x509.X509Certificate(stored.cert),
+                key: await pemToCryptoKey(stored.key),
+                pem: stored.cert
+            };
+        } catch (e) {
+            console.warn('Stored intermediate CA could not be loaded, regenerating:', e);
+            return undefined;
+        }
+    }
+
+    private async intermediateToRecord(intermediate: IntermediateCA, cacheKey: string): Promise<CachedCertificate> {
+        const keyPkcs8 = await crypto.subtle.exportKey("pkcs8", intermediate.key);
+        return {
+            cacheKey,
+            domain: INTERMEDIATE_CACHE_DOMAIN,
+            key: arrayBufferToPem(keyPkcs8, "PRIVATE KEY"),
+            cert: intermediate.pem,
+            expiry: intermediate.cert.notAfter.getTime()
+        };
     }
 
     private async createIntermediateCA(): Promise<IntermediateCA> {
@@ -279,6 +363,7 @@ export class LocalCA {
             ],
             bits: this.options.keyLength || 2048,
             pathLenConstraint: 0,
+            lifespanYears: INTERMEDIATE_LIFESPAN_YEARS,
             signWith: { cert: this.caCert, key: this.caKey }
         });
 
