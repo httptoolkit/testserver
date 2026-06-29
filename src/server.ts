@@ -33,6 +33,8 @@ declare module 'stream' {
         [TLS_CLIENT_HELLO]?: TlsClientHelloData;
         // PROXY protocol data (set when connection uses PROXY protocol)
         [PROXY_PROTOCOL]?: ProxyProtocolData;
+        // The raw TCP socket beneath any TLS/HTTP2 wrappers
+        underlyingSocket?: net.Socket;
     }
 }
 

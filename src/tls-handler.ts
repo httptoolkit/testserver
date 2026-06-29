@@ -1,4 +1,5 @@
 import * as tls from 'tls';
+import * as net from 'net';
 import * as crypto from 'node:crypto';
 import * as stream from 'stream';
 import { EventEmitter } from 'events';
@@ -227,6 +228,9 @@ class TlsConnectionHandler {
             if (rawSocket[PROXY_PROTOCOL]) {
                 tlsSocket[PROXY_PROTOCOL] = rawSocket[PROXY_PROTOCOL];
             }
+            tlsSocket.underlyingSocket = rawSocket instanceof net.Socket
+                ? rawSocket
+                : rawSocket.underlyingSocket;
 
             tlsSocket.on('secure', () => {
                 const endpointLabel = serverNameParts.length > 0

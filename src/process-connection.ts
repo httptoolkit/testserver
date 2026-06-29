@@ -1,4 +1,5 @@
 import * as stream from 'stream';
+import * as net from 'net';
 import * as http from 'http';
 
 import {
@@ -57,6 +58,9 @@ class DataCapturingStream extends stream.Duplex {
         this.encrypted = (wrapped as any).encrypted ?? false;
         this[PROXY_PROTOCOL] = wrapped[PROXY_PROTOCOL];
         this[TLS_CLIENT_HELLO] = wrapped[TLS_CLIENT_HELLO];
+        // Propagate the raw TCP socket through this wrapper (used e.g. by /error/reset).
+        this.underlyingSocket = wrapped.underlyingSocket
+            ?? (wrapped instanceof net.Socket ? wrapped : undefined);
 
         wrapped.on('error', (err) => this.emit('error', err));
         wrapped.on('close', () => this.emit('close'));
