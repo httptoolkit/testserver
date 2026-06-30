@@ -4,11 +4,19 @@ import { CertOptions } from '../tls-certificates/cert-definitions.js';
 import { EndpointMeta, EndpointGroup } from './groups.js';
 export type { EndpointMeta, EndpointGroup };
 
+// Endpoints can configure TLS options directly, or change the accepted version range.
+// See tls-merge for details, but generally multiple parts can't set the same options.
+export interface TlsOptionContribution extends Partial<tls.SecureContextOptions> {
+    enabledVersions?: tls.SecureVersion[];
+    rejectTls?: boolean;
+}
+
 export interface TlsEndpoint {
     sniPart: string;
     plainTextAllowed?: boolean;
     configureCertOptions?(): CertOptions;
-    configureTlsOptions?(tlsOptions: tls.SecureContextOptions): tls.SecureContextOptions;
+    // The TLS options this part sets - merged field-by-field
+    configureTlsOptions?(): TlsOptionContribution;
     configureAlpnPreferences?(preferences: string[]): string[];
     meta?: EndpointMeta;
 }

@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
 import { StatusError } from '@httptoolkit/util';
 
 import { wsEndpoints } from './endpoints/endpoint-index.js';
+import { validateEndpointParts, getSNIPrefixParts } from './endpoints/endpoint-config.js';
 import { resolveEndpointChain } from './endpoint-chain.js';
 import { wsConnectionsTotal } from './metrics.js';
 
@@ -40,6 +41,16 @@ export function handleWebSocketUpgrade(
     const hostnamePrefix = url.hostname.endsWith(options.rootDomain)
         ? url.hostname.slice(0, -options.rootDomain.length - 1)
         : undefined;
+
+    if (hostnamePrefix) {
+        const endpointError = validateEndpointParts(getSNIPrefixParts(url.hostname, options.rootDomain));
+        if (endpointError) {
+            console.log(`WebSocket upgrade to ${path}: ${endpointError}`);
+            socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+    }
 
     let entries: typeof wsEndpoints extends Array<infer T> ? Array<{ endpoint: T; path: string }> : never;
     try {

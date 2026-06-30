@@ -4,7 +4,7 @@ export const noTls: TlsEndpoint = {
     sniPart: 'no-tls',
     plainTextAllowed: true,
     configureTlsOptions() {
-        throw new Error('Intentionally rejecting TLS connection');
+        return { rejectTls: true };
     },
     meta: {
         path: 'no-tls',

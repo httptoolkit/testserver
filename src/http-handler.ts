@@ -4,6 +4,8 @@ import { MaybePromise, StatusError } from '@httptoolkit/util';
 import { getExtensionData } from 'read-tls-client-hello';
 
 import { httpEndpoints, tlsEndpoints } from './endpoints/endpoint-index.js';
+import { validateEndpointParts, getSNIPrefixParts } from './endpoints/endpoint-config.js';
+import { mergeContribution } from './endpoints/tls-merge.js';
 import { HttpRequest, HttpResponse } from './endpoints/http-index.js';
 import { CertOptions } from './tls-certificates/cert-definitions.js';
 import { handleWebSocketUpgrade } from './ws-handler.js';
@@ -58,14 +60,12 @@ interface HttpHandlerOptions {
 }
 
 function getCombinedCertOptions(prefixParts: string[]): CertOptions {
-    let certOptions: CertOptions = {};
+    const certOptions: Record<string, unknown> = {};
     for (const part of prefixParts) {
         const endpoint = tlsEndpoints.find(e => e.sniPart === part);
-        if (endpoint?.configureCertOptions) {
-            certOptions = Object.assign(certOptions, endpoint.configureCertOptions());
-        }
+        mergeContribution(certOptions, endpoint?.configureCertOptions?.());
     }
-    return certOptions;
+    return certOptions as CertOptions;
 }
 
 /**
@@ -170,9 +170,19 @@ function createHttpRequestHandler(options: HttpHandlerOptions): RequestHandler {
             : undefined;
 
         if (hostnamePrefix) {
-            const prefixParts = hostnamePrefix.includes('--')
-                ? hostnamePrefix.split('--')
-                : hostnamePrefix.split('.');
+            const prefixParts = getSNIPrefixParts(url.hostname, options.rootDomain);
+
+            // Any unservable hostname (unknown/duplicate/too-many parts, or conflicting
+            // options) gets a clear 400. Over HTTPS this never gets here (the handshake is
+            // hard-rejected first); over plain HTTP there's no handshake to fail, so we
+            // explain it rather than silently routing or redirecting it.
+            const endpointError = validateEndpointParts(prefixParts);
+            if (endpointError) {
+                endpointLabel = 'invalid_endpoint';
+                res.writeHead(400, { 'content-type': 'text/plain' });
+                res.end(`Invalid endpoint hostname: ${endpointError}`);
+                return;
+            }
 
             // Plain HTTP to a TLS-configuring subdomain: the TLS settings would be
             // silently ignored over plain HTTP, so redirect to HTTPS.

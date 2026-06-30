@@ -11,7 +11,7 @@ import { ConnectionProcessor } from './process-connection.js';
 import { LocalCA } from './tls-certificates/local-ca.js';
 import { CertOptions, calculateCertCacheKey, extractLeafCertificate } from './tls-certificates/cert-definitions.js';
 import { SecureContextCache } from './tls-certificates/secure-context-cache.js';
-import { tlsEndpoints } from './endpoints/endpoint-index.js';
+import { getSNIPrefixParts, getEndpointConfig } from './endpoints/endpoint-config.js';
 import { PROXY_PROTOCOL } from './proxy-protocol.js';
 import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
 import { tlsConnectionsTotal } from './metrics.js';
@@ -59,22 +59,6 @@ interface TlsHandlerConfig {
 
 const DEFAULT_ALPN_PROTOCOLS = ['http/1.1', 'h2'];
 
-const getSNIPrefixParts = (servername: string, rootDomain: string) => {
-    const serverNamePrefix = servername.endsWith(rootDomain)
-        ? servername.slice(0, -rootDomain.length - 1)
-        : servername;
-
-    if (serverNamePrefix === '') return [];
-
-    // Support both -- (preferred, single-level subdomain) and . (legacy, multi-level)
-    if (serverNamePrefix.includes('--')) {
-        return serverNamePrefix.split('--');
-    }
-    return serverNamePrefix.split('.');
-};
-
-const MAX_SNI_PARTS = 4;
-
 const PROACTIVE_DOMAIN_REFRESH_INTERVAL = 1000 * 60 * 60 * 24; // Daily cert check for proactive domains
 
 function proactivelyRefreshDomains(rootDomain: string, domains: string[], certGenerator: CertGenerator) {
@@ -91,24 +75,6 @@ function proactivelyRefreshDomains(rootDomain: string, domains: string[], certGe
         refresh();
         setInterval(refresh, PROACTIVE_DOMAIN_REFRESH_INTERVAL);
     }
-}
-
-function getEndpointConfig(serverNameParts: string[]) {
-    let certOptions: CertOptions = {};
-    let tlsOptions: tls.SecureContextOptions = {};
-    let alpnPreferences: string[] = [];
-
-    for (const part of serverNameParts) {
-        const endpoint = tlsEndpoints.find(e => e.sniPart === part);
-        if (!endpoint) {
-            throw new Error(`Unknown SNI part ${part}`);
-        }
-        certOptions = Object.assign(certOptions, endpoint.configureCertOptions?.());
-        tlsOptions = endpoint.configureTlsOptions?.(tlsOptions) ?? tlsOptions;
-        alpnPreferences = endpoint.configureAlpnPreferences?.(alpnPreferences) ?? alpnPreferences;
-    }
-
-    return { certOptions, tlsOptions, alpnPreferences };
 }
 
 class TlsConnectionHandler {
@@ -150,20 +116,14 @@ class TlsConnectionHandler {
 
             const serverNameParts = getSNIPrefixParts(domain, this.tlsConfig.rootDomain);
 
-            if (serverNameParts.length > MAX_SNI_PARTS) {
-                console.error(`Too many SNI parts (${serverNameParts.length})`);
+            // This validates the whole SNI combination & throws if invalid/unknown/etc
+            const { certOptions, tlsOptions, alpnPreferences, rejectTls } = getEndpointConfig(serverNameParts);
+
+            // Endpoints like no-tls intentionally refuse the handshake.
+            if (rejectTls) {
                 rawSocket.destroy();
                 return;
             }
-
-            const uniqueParts = new Set(serverNameParts);
-            if (uniqueParts.size !== serverNameParts.length) {
-                console.error(`Duplicate SNI parts in '${domain}'`);
-                rawSocket.destroy();
-                return;
-            }
-
-            const { certOptions, tlsOptions, alpnPreferences } = getEndpointConfig(serverNameParts);
 
             const certDomain = certOptions.overridePrefix
                 ? `${certOptions.overridePrefix}.${this.tlsConfig.rootDomain}`
