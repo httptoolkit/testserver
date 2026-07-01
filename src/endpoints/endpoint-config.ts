@@ -60,6 +60,10 @@ export function getEndpointConfig(serverNameParts: string[]) {
     const rejectTls = tlsOptions.rejectTls === true;
     delete tlsOptions.rejectTls;
 
+    if (rejectTls && serverNameParts.length > 1) {
+        throw new Error(`'no-tls' can't be combined with other endpoints in '${serverNameParts.join('--')}'`);
+    }
+
     return {
         certOptions: certOptions as CertOptions,
         tlsOptions: tlsOptions as tls.SecureContextOptions,

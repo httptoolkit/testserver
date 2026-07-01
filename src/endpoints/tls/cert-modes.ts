@@ -51,7 +51,8 @@ export const untrustedRoot: TlsEndpoint = {
     sniPart: 'untrusted-root',
     configureCertOptions() {
         return {
-            requiredType: 'local'
+            requiredType: 'local',
+            selfSigned: false
         };
     },
     meta: {
@@ -83,7 +84,8 @@ export const incompleteChain: TlsEndpoint = {
     sniPart: 'incomplete-chain',
     configureCertOptions() {
         return {
-            incompleteChain: true
+            incompleteChain: true,
+            selfSigned: false
         };
     },
     meta: {

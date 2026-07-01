@@ -66,6 +66,22 @@ describe("Invalid endpoint hostnames", () => {
         });
     }
 
+    for (const host of ['self-signed--untrusted-root', 'self-signed--incomplete-chain']) {
+        it(`rejects '${host}.*' as conflicting cert modes`, async () => {
+            expect(await tlsOutcome(`${host}.localhost`)).to.equal('rejected');
+            expect(await httpStatus(`${host}.localhost`)).to.equal(400);
+        });
+    }
+
+    it("allows untrusted-root combined with incomplete-chain", async () => {
+        expect(await tlsOutcome('untrusted-root--incomplete-chain.localhost')).to.equal('connected');
+    });
+
+    it("rejects no-tls combined with another endpoint", async () => {
+        expect(await tlsOutcome('no-tls--tls-v1-2.localhost')).to.equal('rejected');
+        expect(await httpStatus('no-tls--tls-v1-2.localhost')).to.equal(400);
+    });
+
     it("still redirects a valid TLS-only endpoint over plain HTTP (not a 400)", async () => {
         expect(await httpStatus('expired.localhost')).to.equal(301);
     });
