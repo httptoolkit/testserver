@@ -128,8 +128,15 @@ export const tlsVersions: EndpointGroup = {
     description: 'Endpoints that only accept specific TLS versions. These can be used together, to simulate a server supporting any specific combination of versions.'
 };
 
+export const tlsCiphers: EndpointGroup = {
+    id: 'ciphers',
+    name: 'Cipher Suites',
+    description: 'Endpoints that offer only a specific weak or legacy cipher suite (over TLS 1.2), to test how your client handles it. A well-configured client should refuse to connect.'
+};
+
 export const tlsGroupOrder: EndpointGroup[] = [
     tlsCertificateModes,
     tlsProtocolNegotiation,
-    tlsVersions
+    tlsVersions,
+    tlsCiphers
 ];
