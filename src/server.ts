@@ -234,7 +234,9 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
         'intermediate': () => tlsConfig.localCA.getIntermediateCertificatePem(),
         'self-signed': () => tlsConfig.localCA
             .generateCertificate(tlsConfig.rootDomain, { selfSigned: true })
-            .then((cert) => cert.cert)
+            .then((cert) => cert.cert),
+        'client-cert': () => tlsConfig.localCA.getClientCertificate()
+            .then((client) => `${client.cert.trimEnd()}\n${client.key.trimEnd()}\n`)
     });
     const tlsHandler = await createTlsHandler(tlsConfig, connProcessor);
 

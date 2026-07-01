@@ -219,18 +219,26 @@ interface CertGenerationOptions {
     noCommonName?: boolean;
 }
 
-type IntermediateCA = {
+// Key + cert material for a CA we operate (the server intermediate, or the separate
+// client-auth CA). Persisted and shared across the fleet via the cert store.
+type CaMaterial = {
     cert: x509.X509Certificate,
     key: CryptoKey,
     pem: string
 };
 
-// The intermediate is persisted and shared across servers, so it's long-lived (rather than
-// the 1-year default) to avoid unnecessary rotation, but well within the root's lifetime.
+// Regenerate a persisted CA or client cert once it's within this margin of expiry.
+const RENEWAL_MARGIN_MS = 1000 * 60 * 60 * 24 * 30;
+
+// Persisted CAs are long-lived (rather than the 1-year default) to avoid unnecessary
+// rotation, but well within their issuer's lifetime where they have one.
 const INTERMEDIATE_LIFESPAN_YEARS = 6;
-// Regenerate once an intermediate is within this margin of expiry.
-const INTERMEDIATE_RENEWAL_MARGIN_MS = 1000 * 60 * 60 * 24 * 30;
 const INTERMEDIATE_CACHE_DOMAIN = 'intermediate-ca';
+
+const CLIENT_AUTH_CA_LIFESPAN_YEARS = 10;
+const CLIENT_AUTH_CA_CACHE_DOMAIN = 'client-auth-ca';
+
+const CLIENT_CERT_LIFESPAN_YEARS = 2;
 
 export class LocalCA {
     private caCert: x509.X509Certificate;
@@ -239,7 +247,11 @@ export class LocalCA {
 
     private certInMemoryCache: { [domain: string]: LocallyGeneratedCertificate | undefined } = {};
 
-    private intermediateCA?: Promise<IntermediateCA>;
+    private intermediateCA?: Promise<CaMaterial>;
+
+    private clientAuthCA?: Promise<CaMaterial>;
+
+    private clientCertificate?: Promise<{ cert: LocallyGeneratedCertificate, expiry: number }>;
 
     private constructor(
         private caCertPem: string,
@@ -278,15 +290,31 @@ export class LocalCA {
         return new LocalCA(caOptions.cert.toString(), caCert, caKey, caOptions, certStore);
     }
     
-    private getIntermediateCA(): Promise<IntermediateCA> {
-        if (!this.intermediateCA) {
-            this.intermediateCA = this.loadOrCreateIntermediateCA();
-        }
-        return this.intermediateCA;
+    private getIntermediateCA(): Promise<CaMaterial> {
+        return this.intermediateCA ??= this.loadOrCreatePersistedCA(
+            this.intermediateCacheKey(),
+            INTERMEDIATE_CACHE_DOMAIN,
+            () => this.buildManagedCA('Test Intermediate CA', INTERMEDIATE_LIFESPAN_YEARS, {
+                cert: this.caCert,
+                key: this.caKey
+            })
+        );
     }
 
     async getIntermediateCertificatePem(): Promise<string> {
         return (await this.getIntermediateCA()).pem;
+    }
+
+    private getClientAuthCA(): Promise<CaMaterial> {
+        return this.clientAuthCA ??= this.loadOrCreatePersistedCA(
+            CLIENT_AUTH_CA_CACHE_DOMAIN,
+            CLIENT_AUTH_CA_CACHE_DOMAIN,
+            () => this.buildManagedCA('Testserver Client Authentication CA', CLIENT_AUTH_CA_LIFESPAN_YEARS)
+        );
+    }
+
+    async getClientAuthCaCertPem(): Promise<string> {
+        return (await this.getClientAuthCA()).pem;
     }
 
     // The intermediate is keyed by the root that signs it, so a different root gets its
@@ -295,50 +323,55 @@ export class LocalCA {
         return `intermediate+${certObjectId(this.caCertPem)}`;
     }
 
-    private async loadOrCreateIntermediateCA(): Promise<IntermediateCA> {
-        if (!this.certStore) return this.createIntermediateCA();
-
-        const cacheKey = this.intermediateCacheKey();
+    // Load a persisted CA (server intermediate or client-auth CA) from the shared store,
+    // creating & storing it if absent, renewing it if within its renewal margin, and adopting
+    // one created concurrently by another server so the whole fleet converges on a single CA.
+    private async loadOrCreatePersistedCA(
+        cacheKey: string,
+        cacheDomain: string,
+        create: () => Promise<CaMaterial>
+    ): Promise<CaMaterial> {
+        if (!this.certStore) return create();
 
         const stored = await this.certStore.read(cacheKey);
-        if (stored && this.isIntermediateUsable(stored)) {
-            const parsed = await this.tryParseStoredIntermediate(stored);
+        if (stored && this.isCaUsable(stored)) {
+            const parsed = await this.tryParseStoredCA(stored);
             if (parsed) return parsed;
         }
 
-        const generated = await this.createIntermediateCA();
-        const record = await this.intermediateToRecord(generated, cacheKey);
+        const generated = await create();
+        const record = await this.caToRecord(generated, cacheKey, cacheDomain);
 
         if (stored) {
-            // The stored intermediate is expired or unusable - replace it.
+            // The stored CA is expired or unusable - replace it.
             await this.certStore.write(record);
-            console.log('Renewed intermediate CA in the shared cert store');
+            console.log(`Renewed ${cacheDomain} in the shared cert store`);
             return generated;
         }
 
-        // No intermediate stored yet - create it race-safely. If another server beat us
-        // to it, adopt theirs so the whole fleet converges on a single intermediate.
+        // Nothing stored yet - create it race-safely. If another server beat us to it,
+        // adopt theirs so the whole fleet converges on a single CA.
         if (await this.certStore.writeIfAbsent(record)) {
-            console.log('Stored newly generated intermediate CA in the shared cert store');
+            console.log(`Stored newly generated ${cacheDomain} in the shared cert store`);
             return generated;
         }
 
         const winner = await this.certStore.read(cacheKey);
-        if (winner && this.isIntermediateUsable(winner)) {
-            const parsed = await this.tryParseStoredIntermediate(winner);
+        if (winner && this.isCaUsable(winner)) {
+            const parsed = await this.tryParseStoredCA(winner);
             if (parsed) {
-                console.log('Adopted intermediate CA created concurrently by another server');
+                console.log(`Adopted ${cacheDomain} created concurrently by another server`);
                 return parsed;
             }
         }
         return generated;
     }
 
-    private isIntermediateUsable(stored: CachedCertificate): boolean {
-        return stored.expiry - Date.now() > INTERMEDIATE_RENEWAL_MARGIN_MS;
+    private isCaUsable(stored: CachedCertificate): boolean {
+        return stored.expiry - Date.now() > RENEWAL_MARGIN_MS;
     }
 
-    private async tryParseStoredIntermediate(stored: CachedCertificate): Promise<IntermediateCA | undefined> {
+    private async tryParseStoredCA(stored: CachedCertificate): Promise<CaMaterial | undefined> {
         try {
             return {
                 cert: new x509.X509Certificate(stored.cert),
@@ -346,39 +379,114 @@ export class LocalCA {
                 pem: stored.cert
             };
         } catch (e) {
-            console.warn('Stored intermediate CA could not be loaded, regenerating:', e);
+            console.warn('Stored CA could not be loaded, regenerating:', e);
             return undefined;
         }
     }
 
-    private async intermediateToRecord(intermediate: IntermediateCA, cacheKey: string): Promise<CachedCertificate> {
-        const keyPkcs8 = await crypto.subtle.exportKey("pkcs8", intermediate.key);
+    private async caToRecord(ca: CaMaterial, cacheKey: string, domain: string): Promise<CachedCertificate> {
+        const keyPkcs8 = await crypto.subtle.exportKey("pkcs8", ca.key);
         return {
             cacheKey,
-            domain: INTERMEDIATE_CACHE_DOMAIN,
+            domain,
             key: arrayBufferToPem(keyPkcs8, "PRIVATE KEY"),
-            cert: intermediate.pem,
-            expiry: intermediate.cert.notAfter.getTime()
+            cert: ca.pem,
+            expiry: ca.cert.notAfter.getTime()
         };
     }
 
-    private async createIntermediateCA(): Promise<IntermediateCA> {
+    // Build a CA we operate: the server intermediate (pass signWith to chain it under the root)
+    // or the self-signed client-auth CA (omit signWith).
+    private async buildManagedCA(
+        commonName: string,
+        lifespanYears: number,
+        signWith?: { cert: x509.X509Certificate, key: CryptoKey }
+    ): Promise<CaMaterial> {
         const { keyPair, certificate } = await buildCaCertificate({
             subject: [
                 { C: [this.options.countryName ?? 'XX'] },
                 { O: ['Testserver'] },
-                { CN: ['Test Intermediate CA'] }
+                { CN: [commonName] }
             ],
             bits: this.options.keyLength || 2048,
             pathLenConstraint: 0,
-            lifespanYears: INTERMEDIATE_LIFESPAN_YEARS,
-            signWith: { cert: this.caCert, key: this.caKey }
+            lifespanYears,
+            signWith
         });
 
         return {
             cert: certificate,
             key: keyPair.privateKey as CryptoKey,
             pem: certificate.toString('pem')
+        };
+    }
+
+    // A downloadable client certificate for the mTLS (client-cert) endpoint, signed by the
+    // separate client-auth CA (never the server TLS root). The endpoint accepts any cert signed
+    // by that CA, so a previously-downloaded one keeps working across restarts/machines, and
+    // renewals overlap automatically: old copies stay valid until their own expiry.
+    async getClientCertificate(): Promise<LocallyGeneratedCertificate> {
+        const existing = this.clientCertificate;
+        if (existing) {
+            try {
+                const { cert, expiry } = await existing;
+                if (expiry - Date.now() >= RENEWAL_MARGIN_MS) return cert;
+            } catch {
+                // A failed generation shouldn't poison the cache - fall through and retry.
+            }
+        }
+        this.clientCertificate = this.createClientCertificate();
+        return (await this.clientCertificate).cert;
+    }
+
+    private async createClientCertificate(): Promise<{ cert: LocallyGeneratedCertificate, expiry: number }> {
+        const clientAuthCA = await this.getClientAuthCA();
+
+        const keyPair = await crypto.subtle.generateKey(
+            { ...KEY_PAIR_ALGO, modulusLength: this.options.keyLength || 2048 },
+            true,
+            ['sign', 'verify']
+        ) as CryptoKeyPair;
+
+        const subject = new x509.Name([
+            { C: [this.options.countryName ?? 'XX'] },
+            { O: ['Testserver'] },
+            { CN: ['Testserver Client Certificate'] }
+        ]).toString();
+
+        const notBefore = new Date();
+        notBefore.setDate(notBefore.getDate() - 1);
+        const notAfter = new Date();
+        notAfter.setFullYear(notAfter.getFullYear() + CLIENT_CERT_LIFESPAN_YEARS);
+        const effectiveNotAfter = clampNotAfter(notAfter, clientAuthCA.cert.notAfter);
+
+        const certificate = await x509.X509CertificateGenerator.create({
+            serialNumber: generateSerialNumber(),
+            subject,
+            issuer: clientAuthCA.cert.subject,
+            notBefore,
+            notAfter: effectiveNotAfter,
+            signingAlgorithm: KEY_PAIR_ALGO,
+            publicKey: keyPair.publicKey as CryptoKey,
+            signingKey: clientAuthCA.key,
+            extensions: [
+                new x509.BasicConstraintsExtension(false, undefined, true),
+                new x509.KeyUsagesExtension(x509.KeyUsageFlags.digitalSignature, true),
+                new x509.ExtendedKeyUsageExtension([asn1X509.id_kp_clientAuth], false),
+                await x509.AuthorityKeyIdentifierExtension.create(clientAuthCA.cert, false)
+            ]
+        });
+
+        return {
+            cert: {
+                key: arrayBufferToPem(
+                    await crypto.subtle.exportKey('pkcs8', keyPair.privateKey as CryptoKey),
+                    'PRIVATE KEY'
+                ),
+                cert: certificate.toString('pem'),
+                ca: clientAuthCA.pem
+            },
+            expiry: effectiveNotAfter.getTime()
         };
     }
 
@@ -453,7 +561,7 @@ export class LocalCA {
             true
         ));
         extensions.push(new x509.ExtendedKeyUsageExtension(
-            [asn1X509.id_kp_serverAuth, asn1X509.id_kp_clientAuth],
+            [asn1X509.id_kp_serverAuth],
             false
         ));
 

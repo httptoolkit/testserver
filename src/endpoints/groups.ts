@@ -134,9 +134,16 @@ export const tlsCiphers: EndpointGroup = {
     description: 'Endpoints that offer only a specific weak or legacy cipher suite (over TLS 1.2), to test how your client handles it. A well-configured client should refuse to connect.'
 };
 
+export const tlsClientAuth: EndpointGroup = {
+    id: 'client-auth',
+    name: 'Client Authentication',
+    description: 'Endpoints that require the client to present a certificate (mutual TLS).'
+};
+
 export const tlsGroupOrder: EndpointGroup[] = [
     tlsCertificateModes,
     tlsProtocolNegotiation,
     tlsVersions,
-    tlsCiphers
+    tlsCiphers,
+    tlsClientAuth
 ];

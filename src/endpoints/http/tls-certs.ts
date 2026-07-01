@@ -3,7 +3,7 @@ import { httpTls } from '../groups.js';
 
 const PREFIX = '/tls/certs/';
 
-const CERT_NAMES = ['untrusted-root', 'intermediate', 'self-signed'] as const;
+const CERT_NAMES = ['untrusted-root', 'intermediate', 'self-signed', 'client-cert'] as const;
 type CertName = typeof CERT_NAMES[number];
 
 // The downloadable certificates, keyed by name. Registered as lazy providers at server
@@ -35,15 +35,21 @@ export const tlsCertificates: HttpEndpoint = {
 
         const pem = await (resolved[name] ??= provider());
 
+        // client-cert is a certificate + private key bundle, not a bare CA cert.
+        const contentType = name === 'client-cert'
+            ? 'application/x-pem-file'
+            : 'application/x-x509-ca-cert';
+
         res.writeHead(200, {
-            'content-type': 'application/x-x509-ca-cert',
+            'content-type': contentType,
             'content-disposition': `attachment; filename="testserver-${name}.pem"`
         });
         res.end(pem);
     },
     meta: {
         path: '/tls/certs/{name}',
-        description: 'Download the TLS certificates used by the local CA configuration, in PEM format.',
+        description: 'Download the TLS certificates used by the local CA configuration, in PEM ' +
+            'format. client-cert is a certificate + key bundle for the mTLS client-cert endpoint.',
         examples: CERT_NAMES.map(name => `${PREFIX}${name}`),
         group: httpTls
     }

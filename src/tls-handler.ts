@@ -117,7 +117,7 @@ class TlsConnectionHandler {
             const serverNameParts = getSNIPrefixParts(domain, this.tlsConfig.rootDomain);
 
             // This validates the whole SNI combination & throws if invalid/unknown/etc
-            const { certOptions, tlsOptions, alpnPreferences, rejectTls } = getEndpointConfig(serverNameParts);
+            const { certOptions, tlsOptions, alpnPreferences, rejectTls, requireClientCert } = getEndpointConfig(serverNameParts);
 
             // Endpoints like no-tls intentionally refuse the handshake.
             if (rejectTls) {
@@ -129,7 +129,8 @@ class TlsConnectionHandler {
                 ? `${certOptions.overridePrefix}.${this.tlsConfig.rootDomain}`
                 : domain;
 
-            const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions);
+            const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions)
+                + (requireClientCert ? '|client-cert' : '');
 
             const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
                 const cert = await this.tlsConfig.generateCertificate(certDomain, certOptions);
@@ -137,15 +138,16 @@ class TlsConnectionHandler {
                 const servedCert = certOptions.incompleteChain
                     ? extractLeafCertificate(cert.cert)
                     : cert.cert;
-                const servedCa = certOptions.incompleteChain
-                    ? undefined
-                    : cert.ca;
+
+                const clientAuthCa = requireClientCert
+                    ? await this.tlsConfig.localCA.getClientAuthCaCertPem()
+                    : undefined;
 
                 return {
                     context: tls.createSecureContext({
                         key: cert.key,
                         cert: servedCert,
-                        ca: servedCa,
+                        ...(requireClientCert ? { ca: clientAuthCa } : {}),
                         ...tlsOptions
                     }),
                     // Temporary certs (e.g. local CA fallback while ACME pending) get short cache
@@ -169,6 +171,7 @@ class TlsConnectionHandler {
                 isServer: true,
                 secureContext,
                 ALPNProtocols: alpnProtocols,
+                ...(requireClientCert ? { requestCert: true, rejectUnauthorized: true } : {}),
                 // Only set up OCSP machinery if client requested it
                 ...(clientRequestedOCSP ? {
                     server: this.ocspServer as tls.Server,

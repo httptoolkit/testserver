@@ -56,9 +56,11 @@ export function getEndpointConfig(serverNameParts: string[]) {
 
     resolveEnabledVersions(tlsOptions);
 
-    // Pull out our non-OpenSSL marker so what's left is a clean SecureContextOptions.
+    // Pull out our non-OpenSSL markers so what's left is a clean SecureContextOptions.
     const rejectTls = tlsOptions.rejectTls === true;
     delete tlsOptions.rejectTls;
+    const requireClientCert = tlsOptions.requireClientCert === true;
+    delete tlsOptions.requireClientCert;
 
     if (rejectTls && serverNameParts.length > 1) {
         throw new Error(`'no-tls' can't be combined with other endpoints in '${serverNameParts.join('--')}'`);
@@ -68,7 +70,8 @@ export function getEndpointConfig(serverNameParts: string[]) {
         certOptions: certOptions as CertOptions,
         tlsOptions: tlsOptions as tls.SecureContextOptions,
         alpnPreferences,
-        rejectTls
+        rejectTls,
+        requireClientCert
     };
 }
 
