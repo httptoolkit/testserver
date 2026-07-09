@@ -9,6 +9,12 @@ export interface CertOptions {
 
     noCommonName?: boolean;
 
+    // RSA key size (bits) for the leaf, for the rsaXXXX key-size endpoints. Omitted => default shared key.
+    keyBits?: number;
+
+    // Sign the leaf with SHA-1
+    sha1Signature?: boolean;
+
     // This is a presentation difference only - cert is the same, we just don't
     // send the full chain with it.
     incompleteChain?: boolean;
@@ -20,10 +26,14 @@ export function calculateCertCacheKey(domain: string, options: CertOptions) {
         'revoked',
         'selfSigned',
         'noCommonName',
+        'sha1Signature',
     ] as const).filter((k) => options[k]);
 
     if (options.overridePrefix) {
         parts.push(`override=${options.overridePrefix}`);
+    }
+    if (options.keyBits) {
+        parts.push(`keyBits=${options.keyBits}`);
     }
 
     return `${domain}+${parts.join('+')}`;

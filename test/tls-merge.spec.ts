@@ -4,7 +4,8 @@ import { expect } from 'chai';
 
 import {
     mergeContribution,
-    resolveEnabledVersions
+    resolveEnabledVersions,
+    resolveSecurityLevel
 } from '../src/endpoints/tls-merge.js';
 
 describe("TLS/cert option merge", () => {
@@ -36,13 +37,20 @@ describe("TLS/cert option merge", () => {
         expect(acc.enabledVersions).to.deep.equal(['TLSv1', 'TLSv1.2']);
     });
 
+    it("combines securityLevel by taking the lowest (most permissive) value", () => {
+        const acc: Record<string, unknown> = {};
+        mergeContribution(acc, { securityLevel: 2 });
+        mergeContribution(acc, { securityLevel: 0 });
+        expect(acc.securityLevel).to.equal(0);
+    });
+
     it("resolves enabledVersions into disable flags + minVersion + legacy seclevel", () => {
         const opts: Record<string, unknown> = { enabledVersions: ['TLSv1', 'TLSv1.3'] };
         resolveEnabledVersions(opts);
 
         expect(opts.enabledVersions).to.equal(undefined);
         expect(opts.minVersion).to.equal('TLSv1');
-        expect(opts.ciphers).to.contain('@SECLEVEL=0'); // legacy min => lowered security level
+        expect(opts.securityLevel).to.equal(0); // legacy min => lowered security level
 
         const so = opts.secureOptions as number;
         // 1.1 and 1.2 disabled; 1.0 and 1.3 left enabled:
@@ -56,6 +64,18 @@ describe("TLS/cert option merge", () => {
         const opts: Record<string, unknown> = { enabledVersions: ['TLSv1.2'] };
         resolveEnabledVersions(opts);
         expect(opts.minVersion).to.equal('TLSv1.2');
-        expect(opts.ciphers).to.equal(undefined);
+        expect(opts.securityLevel).to.equal(undefined);
+    });
+
+    it("folds securityLevel into the ciphers @SECLEVEL suffix", () => {
+        const withList: Record<string, unknown> = { ciphers: 'AES128-SHA', securityLevel: 0 };
+        resolveSecurityLevel(withList);
+        expect(withList.securityLevel).to.equal(undefined);
+        expect(withList.ciphers).to.equal('AES128-SHA@SECLEVEL=0');
+
+        // With no cipher list, it applies the level to OpenSSL's DEFAULT set:
+        const noList: Record<string, unknown> = { securityLevel: 0 };
+        resolveSecurityLevel(noList);
+        expect(noList.ciphers).to.equal('DEFAULT@SECLEVEL=0');
     });
 });

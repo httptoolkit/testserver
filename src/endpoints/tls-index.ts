@@ -10,6 +10,7 @@ export interface TlsOptionContribution extends Partial<tls.SecureContextOptions>
     enabledVersions?: tls.SecureVersion[];
     rejectTls?: boolean;
     requireClientCert?: boolean;
+    securityLevel?: number;
 }
 
 export interface TlsEndpoint {
@@ -27,5 +28,6 @@ export * from './tls/cert-modes.js';
 export * from './tls/ciphers.js';
 export * from './tls/client-cert.js';
 export * from './tls/example.js';
+export * from './tls/key-sizes.js';
 export * from './tls/no-tls.js';
 export * from './tls/tls-versions.js';

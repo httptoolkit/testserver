@@ -4,7 +4,8 @@ import { tlsEndpoints } from './endpoint-index.js';
 import { CertOptions } from '../tls-certificates/cert-definitions.js';
 import {
     mergeContribution,
-    resolveEnabledVersions
+    resolveEnabledVersions,
+    resolveSecurityLevel
 } from './tls-merge.js';
 
 const MAX_SNI_PARTS = 4;
@@ -55,6 +56,7 @@ export function getEndpointConfig(serverNameParts: string[]) {
     }
 
     resolveEnabledVersions(tlsOptions);
+    resolveSecurityLevel(tlsOptions);
 
     // Pull out our non-OpenSSL markers so what's left is a clean SecureContextOptions.
     const rejectTls = tlsOptions.rejectTls === true;

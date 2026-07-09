@@ -96,6 +96,26 @@ export const incompleteChain: TlsEndpoint = {
     }
 };
 
+export const sha1Sig: TlsEndpoint = {
+    sniPart: 'sha1-sig',
+    configureCertOptions() {
+        return {
+            requiredType: 'local',
+            sha1Signature: true
+        };
+    },
+    configureTlsOptions() {
+        // OpenSSL refuses to even load a SHA-1-signed cert at its default security level
+        return { securityLevel: 0 };
+    },
+    meta: {
+        path: 'sha1-sig',
+        description: 'Serves a certificate signed with SHA-1 (insecure).',
+        examples: ['https://sha1-sig.testserver.host/'],
+        group: tlsCertificateModes
+    }
+};
+
 export const wrongHost: TlsEndpoint = {
     sniPart: 'wrong-host',
     configureCertOptions() {

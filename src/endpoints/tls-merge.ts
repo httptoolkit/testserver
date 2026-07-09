@@ -11,12 +11,14 @@ const VERSION_DISABLE_FLAGS: Record<tls.SecureVersion, number> = {
 };
 
 // Fields that combine across SNI parts rather than being mutually exclusive. Anything not
-// listed here is exclusive: two parts setting it to different values is a conflict. Only
-// enabledVersions is set by an endpoint (cert and TLS field names don't overlap, so one
-// table serves both merges); secureOptions/minVersion are derived afterwards by
-// resolveEnabledVersions, so they never go through the merge.
+// listed here is exclusive: two parts setting it to different values is a conflict.
+// enabledVersions accumulates; securityLevel takes the lowest (most permissive) value, so
+// several weak-crypto endpoints that each need a lowered level can be combined. (Cert and TLS
+// field names don't overlap, so one table serves both merges.) secureOptions/minVersion and the
+// final ciphers @SECLEVEL suffix are derived afterwards, so they never go through the merge.
 const FIELD_COMBINERS: Record<string, (existing: unknown, incoming: unknown) => unknown> = {
-    enabledVersions: (a, b) => [...(a as string[]), ...(b as string[])]
+    enabledVersions: (a, b) => [...(a as string[]), ...(b as string[])],
+    securityLevel: (a, b) => Math.min(a as number, b as number)
 };
 
 /**
@@ -66,7 +68,20 @@ export function resolveEnabledVersions(tlsOptions: Record<string, unknown>): voi
     if (lowest) tlsOptions.minVersion = lowest;
 
     if (lowest === 'TLSv1' || lowest === 'TLSv1.1') {
-        const ciphers = (tlsOptions.ciphers as string | undefined) ?? 'DEFAULT';
-        if (!ciphers.includes('@SECLEVEL=0')) tlsOptions.ciphers = `${ciphers}@SECLEVEL=0`;
+        tlsOptions.securityLevel = Math.min((tlsOptions.securityLevel as number | undefined) ?? Infinity, 0);
     }
+}
+
+/**
+ * Fold the merged security level into the `ciphers` string as OpenSSL's @SECLEVEL suffix (the
+ * only way to set it via createSecureContext), then remove the marker field. Runs after
+ * resolveEnabledVersions, which may itself request a level for legacy TLS versions.
+ */
+export function resolveSecurityLevel(tlsOptions: Record<string, unknown>): void {
+    const level = tlsOptions.securityLevel as number | undefined;
+    if (level === undefined) return;
+    delete tlsOptions.securityLevel;
+
+    const base = ((tlsOptions.ciphers as string | undefined) ?? 'DEFAULT').replace(/@SECLEVEL=\d+/g, '');
+    tlsOptions.ciphers = `${base}@SECLEVEL=${level}`;
 }

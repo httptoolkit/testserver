@@ -188,12 +188,15 @@ function isRevokedCert(cert: x509.X509Certificate): boolean {
 }
 
 function calculateCacheKey(domain: string, options: CertOptions) {
-    return `${domain}+${([
+    const parts: string[] = ([
         'expired',
         'revoked',
         'selfSigned',
-        'noCommonName'
-    ] as const).filter((k: keyof CertOptions) => options[k]).join('+')}`
+        'noCommonName',
+        'sha1Signature'
+    ] as const).filter((k: keyof CertOptions) => options[k]);
+    if (options.keyBits) parts.push(`keyBits=${options.keyBits}`);
+    return `${domain}+${parts.join('+')}`;
 }
 
 // We share a single keypair across all certificates in this process, and
@@ -217,6 +220,16 @@ interface CertGenerationOptions {
     selfSigned?: boolean;
     expired?: boolean;
     noCommonName?: boolean;
+    keyBits?: number;
+    sha1Signature?: boolean;
+}
+
+// RSASSA-PKCS1-v1_5 binds its digest to the key rather than the per-signature algorithm, so
+// to sign a certificate with a different digest (SHA-1, for the sha1-sig endpoint) we have to
+// re-import the signing key with that hash - passing it only via signingAlgorithm is ignored.
+async function reimportSigningKey(key: CryptoKey, hash: string): Promise<CryptoKey> {
+    const pkcs8 = await crypto.subtle.exportKey('pkcs8', key);
+    return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'RSASSA-PKCS1-v1_5', hash }, true, ['sign']);
 }
 
 // Key + cert material for a CA we operate (the server intermediate, or the separate
@@ -517,7 +530,13 @@ export class LocalCA {
         const cachedCert = this.certInMemoryCache[cacheKey];
         if (cachedCert) return cachedCert;
 
-        const leafKeyPair = await KEY_PAIR!.value;
+        const leafKeyPair = options.keyBits
+            ? await crypto.subtle.generateKey(
+                { ...KEY_PAIR_ALGO, modulusLength: options.keyBits },
+                true,
+                ['sign', 'verify']
+            ) as CryptoKeyPair
+            : await KEY_PAIR!.value;
 
         // Build subject DN with only the fields allowed by BR for DV certs
         const subjectJsonNameParams: x509.JsonNameParams = [];
@@ -585,17 +604,23 @@ export class LocalCA {
             extensions.push(await x509.AuthorityKeyIdentifierExtension.create(intermediate.cert, false));
         }
 
+        const baseSigningKey = intermediate ? intermediate.key : leafKeyPair.privateKey as CryptoKey;
+        const signingKey = options.sha1Signature
+            ? await reimportSigningKey(baseSigningKey, 'SHA-1')
+            : baseSigningKey;
+        const signingAlgorithm = options.sha1Signature
+            ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-1' }
+            : KEY_PAIR_ALGO;
+
         const certificate = await x509.X509CertificateGenerator.create({
             serialNumber: generateSerialNumber(),
             subject: subjectDistinguishedName,
             issuer: issuerDistinguishedName,
             notBefore,
             notAfter: effectiveNotAfter,
-            signingAlgorithm: KEY_PAIR_ALGO,
+            signingAlgorithm,
             publicKey: leafKeyPair.publicKey,
-            signingKey: intermediate
-                ? intermediate.key
-                : leafKeyPair.privateKey as CryptoKey,
+            signingKey,
             extensions
         });
 

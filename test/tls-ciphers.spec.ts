@@ -52,8 +52,14 @@ describe("TLS cipher endpoints", () => {
         expect(name).to.match(/NULL/);
     });
 
-    it("weak-dh negotiates ephemeral DH over TLS 1.2", async () => {
-        const { name, version } = await negotiate('weak-dh.localhost', 'DHE-RSA-AES128-SHA');
+    it("dh1024 negotiates ephemeral DH over TLS 1.2", async () => {
+        const { name, version } = await negotiate('dh1024.localhost', 'DHE-RSA-AES128-SHA');
+        expect(version).to.equal('TLSv1.2');
+        expect(name).to.match(/^DHE-/);
+    });
+
+    it("dh2048 negotiates ephemeral DH over TLS 1.2", async () => {
+        const { name, version } = await negotiate('dh2048.localhost', 'DHE-RSA-AES128-SHA');
         expect(version).to.equal('TLSv1.2');
         expect(name).to.match(/^DHE-/);
     });
