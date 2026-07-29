@@ -260,6 +260,10 @@ export class LocalCA {
 
     private certInMemoryCache: { [domain: string]: LocallyGeneratedCertificate | undefined } = {};
 
+    // A self-signed cert is its own issuer, so it can answer OCSP for itself - but only while we
+    // still hold its key. Kept by serial, and dropped alongside the cached cert it belongs to.
+    private selfSignedCerts = new Map<string, { cert: x509.X509Certificate, key: CryptoKey }>();
+
     private intermediateCA?: Promise<CaMaterial>;
 
     private clientAuthCA?: Promise<CaMaterial>;
@@ -640,26 +644,48 @@ export class LocalCA {
 
         this.certInMemoryCache[cacheKey] = generatedCertificate;
 
+        if (options.selfSigned) {
+            this.selfSignedCerts.set(certificate.serialNumber, {
+                cert: certificate,
+                key: leafKeyPair.privateKey as CryptoKey
+            });
+        }
+
         setTimeout(() => {
             delete this.certInMemoryCache[cacheKey];
+            this.selfSignedCerts.delete(certificate.serialNumber);
         }, 1000 * 60 * 60 * 24).unref();
 
         return generatedCertificate;
     }
 
-    // An OCSP response must be signed by (and its CertID derived from) the cert's actual
-    // issuer. Non-self-signed leaves are issued by the intermediate, so resolve that;
-    // fall back to the root for anything else.
-    private async resolveOcspIssuer(
+    // An OCSP response must be signed by (and its CertID derived from) the cert's actual issuer,
+    // so we can only answer for certificates issued by a key we hold: one of our own CAs, or a
+    // self-signed cert we generated, which issued itself. Anything else (notably real ACME certs)
+    // gets no answer, rather than one naming an issuer unrelated to the served chain.
+    private async findOcspIssuer(
         cert: x509.X509Certificate
-    ): Promise<{ cert: x509.X509Certificate, key: CryptoKey }> {
-        if (this.intermediateCA) {
-            const intermediate = await this.intermediateCA;
-            if (cert.issuer === intermediate.cert.subject) {
-                return { cert: intermediate.cert, key: intermediate.key };
-            }
+    ): Promise<{ cert: x509.X509Certificate, key: CryptoKey } | undefined> {
+        const selfSigned = this.selfSignedCerts.get(cert.serialNumber);
+        if (selfSigned?.cert.equal(cert)) return selfSigned;
+
+        const candidates = [
+            ...(this.intermediateCA ? [await this.intermediateCA] : []),
+            { cert: this.caCert, key: this.caKey }
+        ];
+
+        for (const candidate of candidates) {
+            if (cert.issuer !== candidate.cert.subject) continue;
+
+            const signedByCandidate = await cert.verify({
+                publicKey: candidate.cert.publicKey,
+                signatureOnly: true
+            }).catch(() => false);
+
+            if (signedByCandidate) return { cert: candidate.cert, key: candidate.key };
         }
-        return { cert: this.caCert, key: this.caKey };
+
+        return undefined;
     }
 
     async getOcspResponse(certDer: Buffer): Promise<Buffer | null> {
@@ -672,7 +698,10 @@ export class LocalCA {
             return null;
         }
 
-        const { cert: issuerCert, key: issuerKey } = await this.resolveOcspIssuer(cert);
+        const issuer = await this.findOcspIssuer(cert);
+        if (!issuer) return null;
+
+        const { cert: issuerCert, key: issuerKey } = issuer;
 
         if (isRevokedCert(cert)) {
             // Certificate is revoked - return revoked OCSP response

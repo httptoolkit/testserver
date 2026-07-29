@@ -1,6 +1,8 @@
 import { expect } from 'chai';
 import * as tls from 'tls';
+import * as x509 from '@peculiar/x509';
 import { createTestServer } from './test-helpers.js';
+import { certIdHashes, parseSingleResponse } from './ocsp-helpers.js';
 
 describe("Revoked certificate endpoint", () => {
 
@@ -158,6 +160,49 @@ describe("Revoked certificate endpoint", () => {
         expect(ocspResponse).to.exist;
         expect(ocspResponse).to.be.instanceOf(Buffer);
         expect(ocspResponse!.length).to.be.greaterThan(0);
+    });
+
+    it("staples a self-signed revoked certificate's own OCSP response", async function() {
+        this.timeout(5000);
+
+        const { ocspResponse, peerCert } = await new Promise<{
+            ocspResponse: Buffer | null | undefined,
+            peerCert: Buffer
+        }>((resolve, reject) => {
+            let staple: Buffer | null | undefined;
+
+            const socket = tls.connect({
+                host: 'localhost',
+                port: serverPort,
+                servername: 'self-signed--revoked.localhost',
+                rejectUnauthorized: false,
+                requestOCSP: true
+            } as any);
+
+            socket.on('OCSPResponse', (response) => { staple = response; });
+
+            socket.on('secureConnect', () => {
+                const peerCert = socket.getPeerCertificate().raw;
+                socket.end();
+                resolve({ ocspResponse: staple, peerCert });
+            });
+
+            socket.on('error', reject);
+        });
+
+        expect(ocspResponse).to.exist;
+
+        // The staple must describe the cert we actually served - a self-signed cert is its
+        // own issuer, so every CertID field comes from the served cert itself.
+        const served = new x509.X509Certificate(peerCert);
+        const expectedHashes = await certIdHashes(served);
+        const { certID, certStatus } = parseSingleResponse(ocspResponse!);
+
+        expect(Buffer.from(certID.issuerNameHash.buffer).toString('hex')).to.equal(expectedHashes.nameHash);
+        expect(Buffer.from(certID.issuerKeyHash.buffer).toString('hex')).to.equal(expectedHashes.keyHash);
+        expect(Buffer.from(certID.serialNumber).toString('hex').replace(/^00/, ''))
+            .to.equal(served.serialNumber.toLowerCase());
+        expect(certStatus.revoked).to.exist;
     });
 
     it("combines revoked with protocol preferences", async () => {

@@ -4,7 +4,9 @@ import * as asn1Ocsp from '@peculiar/asn1-ocsp';
 import * as asn1X509 from '@peculiar/asn1-x509';
 import * as asn1Schema from '@peculiar/asn1-schema';
 import { createOcspResponse, parseOcspRequest, RevocationReason } from '../src/tls-certificates/ocsp.js';
-import { generateCACertificate } from '../src/tls-certificates/local-ca.js';
+import { generateCACertificate, LocalCA } from '../src/tls-certificates/local-ca.js';
+import { extractLeafCertificate } from '../src/tls-certificates/cert-definitions.js';
+import { certIdHashes, parseSingleResponse, readSignedInteger, toDer } from './ocsp-helpers.js';
 
 const crypto = globalThis.crypto;
 
@@ -179,7 +181,26 @@ describe("OCSP response generation", () => {
 
         // Convert the serial number to hex for comparison
         const serialHex = Buffer.from(certId.serialNumber).toString('hex');
-        expect(serialHex.toLowerCase()).to.equal(cert.serialNumber.toLowerCase().replace(/\s/g, ''));
+        expect(serialHex.toLowerCase().replace(/^00/, ''))
+            .to.equal(cert.serialNumber.toLowerCase().replace(/\s/g, ''));
+    });
+
+    it("encodes a high-bit serial number as a positive integer", async () => {
+        // 0xA1... has its top bit set, so without a sign pad this reads back as a negative
+        // number - i.e. a CertID for a certificate other than the one being served.
+        expect(cert.serialNumber.toLowerCase()).to.equal('a123456789abcdef');
+
+        const response = await createOcspResponse({
+            cert,
+            issuerCert: caCert,
+            issuerKey: caKey,
+            status: 'good'
+        });
+
+        const { certID } = parseSingleResponse(response);
+
+        expect(readSignedInteger(certID.serialNumber))
+            .to.equal(BigInt(`0x${cert.serialNumber}`));
     });
 
     it("includes thisUpdate timestamp", async () => {
@@ -288,5 +309,88 @@ describe("OCSP response generation", () => {
         const parsed = parseOcspRequest(requestDer);
         expect(parsed).to.not.be.null;
         expect(parsed!.serialNumber).to.equal('010203');
+    });
+});
+
+describe("OCSP responses from the local CA", () => {
+
+    let localCA: LocalCA;
+    let otherCA: LocalCA;
+
+    before(async () => {
+        localCA = await LocalCA.create(await generateCACertificate());
+        otherCA = await LocalCA.create(await generateCACertificate({ commonName: 'Other CA' }));
+    });
+
+    it("answers for a certificate it issued, naming the issuing intermediate", async () => {
+        const generated = await localCA.generateCertificate('example.testserver.host', {});
+        const leafPem = extractLeafCertificate(generated.cert);
+
+        const response = await localCA.getOcspResponse(toDer(leafPem));
+        expect(response).to.not.be.null;
+
+        const { certID } = parseSingleResponse(response!);
+        const leaf = new x509.X509Certificate(leafPem);
+        const intermediate = new x509.X509Certificate(await localCA.getIntermediateCertificatePem());
+        const expectedHashes = await certIdHashes(intermediate);
+
+        expect(leaf.issuer).to.equal(intermediate.subject);
+        expect(Buffer.from(certID.issuerNameHash.buffer).toString('hex')).to.equal(expectedHashes.nameHash);
+        expect(Buffer.from(certID.issuerKeyHash.buffer).toString('hex')).to.equal(expectedHashes.keyHash);
+        expect(readSignedInteger(certID.serialNumber)).to.equal(BigInt(`0x${leaf.serialNumber}`));
+    });
+
+    it("refuses to answer for a certificate issued by another CA", async () => {
+        // This is what a real ACME-issued cert looks like to us: we have no standing to say
+        // anything about it, so we must not staple a response naming one of our own CAs.
+        const foreignCert = await otherCA.generateCertificate('example.testserver.host', {});
+
+        const response = await localCA.getOcspResponse(toDer(extractLeafCertificate(foreignCert.cert)));
+        expect(response).to.be.null;
+    });
+
+    it("answers for a self-signed certificate it generated, naming the cert itself", async () => {
+        // A self-signed cert is its own issuer, so signing with its own key is exactly what
+        // RFC 6960 asks for - and we still hold that key.
+        const generated = await localCA.generateCertificate('example.testserver.host', {
+            selfSigned: true
+        });
+        const leafPem = extractLeafCertificate(generated.cert);
+
+        const response = await localCA.getOcspResponse(toDer(leafPem));
+        expect(response).to.not.be.null;
+
+        const { certID } = parseSingleResponse(response!);
+        const leaf = new x509.X509Certificate(leafPem);
+        const expectedHashes = await certIdHashes(leaf);
+
+        expect(leaf.issuer).to.equal(leaf.subject);
+        expect(Buffer.from(certID.issuerNameHash.buffer).toString('hex')).to.equal(expectedHashes.nameHash);
+        expect(Buffer.from(certID.issuerKeyHash.buffer).toString('hex')).to.equal(expectedHashes.keyHash);
+        expect(readSignedInteger(certID.serialNumber)).to.equal(BigInt(`0x${leaf.serialNumber}`));
+    });
+
+    it("reports a self-signed revoked certificate as revoked", async () => {
+        const generated = await localCA.generateCertificate('revoked.testserver.host', {
+            selfSigned: true
+        });
+
+        const response = await localCA.getOcspResponse(toDer(extractLeafCertificate(generated.cert)));
+        expect(response).to.not.be.null;
+
+        expect(parseSingleResponse(response!).certStatus.revoked).to.exist;
+    });
+
+    it("refuses to answer for a self-signed certificate generated elsewhere", async () => {
+        const foreignCert = await otherCA.generateCertificate('example.testserver.host', {
+            selfSigned: true
+        });
+
+        const response = await localCA.getOcspResponse(toDer(extractLeafCertificate(foreignCert.cert)));
+        expect(response).to.be.null;
+    });
+
+    it("refuses to answer for data that isn't a certificate", async () => {
+        expect(await localCA.getOcspResponse(Buffer.from('not a certificate'))).to.be.null;
     });
 });

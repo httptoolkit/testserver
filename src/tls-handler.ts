@@ -16,8 +16,6 @@ import { PROXY_PROTOCOL } from './proxy-protocol.js';
 import { TLS_CLIENT_HELLO } from './tls-client-hello.js';
 import { tlsConnectionsTotal } from './metrics.js';
 
-const secureContextCache = new SecureContextCache();
-
 function calculateContextCacheKey(
     domain: string,
     certOptions: CertOptions,
@@ -78,7 +76,11 @@ function proactivelyRefreshDomains(rootDomain: string, domains: string[], certGe
 }
 
 class TlsConnectionHandler {
-    
+
+    // Cached contexts are built from this handler's own CA, so they can't be shared with
+    // another handler - it would serve certs whose issuer it knows nothing about.
+    private secureContextCache = new SecureContextCache();
+
     // To keep Node happy, we need a TLS server attached to our sockets in some cases
     // to enable some features (like OCSP). This'll do:
     private ocspServer = new EventEmitter();
@@ -90,18 +92,14 @@ class TlsConnectionHandler {
         this.ocspServer.on('OCSPRequest', async (
             certificate: Buffer,
             _issuer: Buffer,
-            callback: (err: Error | null, response: Buffer) => void
+            callback: (err: Error | null, response?: Buffer) => void
         ) => {
             try {
                 const ocspResponse = await this.tlsConfig.localCA!.getOcspResponse(certificate);
-                if (ocspResponse) {
-                    callback(null, ocspResponse);
-                } else {
-                    callback(null, Buffer.alloc(0));
-                }
+                callback(null, ocspResponse ?? undefined);
             } catch (e) {
                 console.error('OCSP response generation error', e);
-                callback(null, Buffer.alloc(0));
+                callback(null, undefined);
             }
         });
     }
@@ -132,7 +130,7 @@ class TlsConnectionHandler {
             const cacheKey = calculateContextCacheKey(certDomain, certOptions, tlsOptions)
                 + (requireClientCert ? '|client-cert' : '');
 
-            const secureContext = await secureContextCache.getOrCreate(cacheKey, async () => {
+            const secureContext = await this.secureContextCache.getOrCreate(cacheKey, async () => {
                 const cert = await this.tlsConfig.generateCertificate(certDomain, certOptions);
 
                 const servedCert = certOptions.incompleteChain

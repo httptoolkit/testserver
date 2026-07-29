@@ -38,19 +38,29 @@ async function sha1Hash(data: BufferSource): Promise<ArrayBuffer> {
     return await crypto.subtle.digest('SHA-1', data);
 }
 
+// The CertID serial is a DER INTEGER, so a serial whose leading byte has the high bit set
+// needs a zero pad - without it the response identifies a negative, i.e. different, serial.
+function serialNumberBytes(cert: x509.X509Certificate): Uint8Array {
+    const serialHex = cert.serialNumber.replace(/\s/g, '');
+    const paddedHex = serialHex.length % 2 === 0 ? serialHex : `0${serialHex}`;
+
+    const bytes = Uint8Array.from(
+        paddedHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16))
+    );
+
+    if ((bytes[0]! & 0x80) === 0) return bytes;
+
+    const signedBytes = new Uint8Array(bytes.length + 1);
+    signedBytes.set(bytes, 1);
+    return signedBytes;
+}
+
 function createCertId(
     cert: x509.X509Certificate,
-    issuerCert: x509.X509Certificate,
     issuerNameHash: ArrayBuffer,
     issuerKeyHash: ArrayBuffer
 ): asn1Ocsp.CertID {
-    // Get serial number as hex string and convert to bytes
-    const serialHex = cert.serialNumber;
-    // Remove any spaces and ensure even length
-    const cleanSerial = serialHex.replace(/\s/g, '');
-    const serialBytes = new Uint8Array(
-        cleanSerial.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
-    );
+    const serialBytes = serialNumberBytes(cert);
 
     return new asn1Ocsp.CertID({
         hashAlgorithm: new asn1X509.AlgorithmIdentifier({
@@ -90,7 +100,7 @@ async function createSingleResponse(
     const thisUpdate = options.thisUpdate || new Date();
 
     const singleResponse = new asn1Ocsp.SingleResponse({
-        certID: createCertId(options.cert, options.issuerCert, issuerNameHash, issuerKeyHash),
+        certID: createCertId(options.cert, issuerNameHash, issuerKeyHash),
         certStatus: createCertStatus(options.status, options.revocationTime, options.revocationReason),
         thisUpdate
     });

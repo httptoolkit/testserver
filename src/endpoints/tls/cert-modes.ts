@@ -25,7 +25,7 @@ export const revoked: TlsEndpoint = {
     },
     meta: {
         path: 'revoked',
-        description: 'Serves a revoked TLS certificate (reported via OCSP).',
+        description: 'Serves a revoked TLS certificate (by stapled OCSP for local root, or CRL for public root).',
         examples: ['https://revoked.testserver.host/'],
         group: tlsCertificateModes
     }
