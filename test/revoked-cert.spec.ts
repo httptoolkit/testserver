@@ -132,7 +132,13 @@ describe("Revoked certificate endpoint", () => {
     it("regular (non-revoked) certificate gets 'good' OCSP status", async function() {
         this.timeout(5000);
 
-        const ocspResponse = await new Promise<Buffer | undefined>((resolve, reject) => {
+        const { ocspResponse, leaf, issuer } = await new Promise<{
+            ocspResponse: Buffer | null | undefined,
+            leaf: Buffer,
+            issuer: Buffer
+        }>((resolve, reject) => {
+            let staple: Buffer | null | undefined;
+
             const socket = tls.connect({
                 host: 'localhost',
                 port: serverPort,
@@ -141,25 +147,33 @@ describe("Revoked certificate endpoint", () => {
                 requestOCSP: true
             } as any);
 
-            socket.on('OCSPResponse', (response) => {
-                socket.end();
-                resolve(response);
-            });
+            socket.on('OCSPResponse', (response) => { staple = response; });
 
             socket.on('secureConnect', () => {
-                setTimeout(() => {
-                    socket.end();
-                    resolve(undefined);
-                }, 1000);
+                const peerCert = socket.getPeerCertificate(true);
+                socket.end();
+                resolve({
+                    ocspResponse: staple,
+                    leaf: peerCert.raw,
+                    issuer: peerCert.issuerCertificate.raw
+                });
             });
 
             socket.on('error', reject);
         });
 
-        // Should receive OCSP response for normal cert too (but with 'good' status)
         expect(ocspResponse).to.exist;
-        expect(ocspResponse).to.be.instanceOf(Buffer);
-        expect(ocspResponse!.length).to.be.greaterThan(0);
+
+        // A 'good' status, for the served cert as identified by its real issuer
+        const { certID, certStatus } = parseSingleResponse(ocspResponse!);
+        const expectedHashes = await certIdHashes(new x509.X509Certificate(issuer));
+
+        expect(certStatus.good).to.not.be.undefined;
+        expect(certStatus.revoked).to.be.undefined;
+        expect(Buffer.from(certID.issuerNameHash.buffer).toString('hex')).to.equal(expectedHashes.nameHash);
+        expect(Buffer.from(certID.issuerKeyHash.buffer).toString('hex')).to.equal(expectedHashes.keyHash);
+        expect(Buffer.from(certID.serialNumber).toString('hex').replace(/^00/, ''))
+            .to.equal(new x509.X509Certificate(leaf).serialNumber.toLowerCase());
     });
 
     it("staples a self-signed revoked certificate's own OCSP response", async function() {
