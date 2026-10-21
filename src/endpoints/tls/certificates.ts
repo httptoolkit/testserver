@@ -1,5 +1,5 @@
 import { TlsEndpoint } from '../tls-index.js';
-import { tlsCertificateModes } from '../groups.js';
+import { tlsCertificates } from '../groups.js';
 
 export const expired: TlsEndpoint = {
     sniPart: 'expired',
@@ -12,7 +12,7 @@ export const expired: TlsEndpoint = {
         path: 'expired',
         description: 'Serves an expired TLS certificate.',
         examples: ['https://expired.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -27,7 +27,7 @@ export const revoked: TlsEndpoint = {
         path: 'revoked',
         description: 'Serves a revoked TLS certificate (by stapled OCSP for local root, or CRL for public root).',
         examples: ['https://revoked.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -43,7 +43,7 @@ export const selfSigned: TlsEndpoint = {
         path: 'self-signed',
         description: 'Serves a self-signed TLS certificate.',
         examples: ['https://self-signed.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -59,7 +59,7 @@ export const untrustedRoot: TlsEndpoint = {
         path: 'untrusted-root',
         description: 'Serves a TLS certificate signed by an untrusted root CA.',
         examples: ['https://untrusted-root.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -76,7 +76,7 @@ export const noCommonName: TlsEndpoint = {
         path: 'no-common-name',
         description: 'Serves a TLS certificate with no Common Name (Subject Alternative Name only). Local CA only.',
         examples: ['https://no-common-name.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -91,7 +91,7 @@ export const incompleteChain: TlsEndpoint = {
         path: 'incomplete-chain',
         description: 'Serves a TLS certificate without the required intermediate certificate.',
         examples: ['https://incomplete-chain.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -111,7 +111,7 @@ export const sha1Sig: TlsEndpoint = {
         path: 'sha1-sig',
         description: 'Serves a certificate signed with SHA-1 (insecure).',
         examples: ['https://sha1-sig.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -126,7 +126,7 @@ export const wrongHost: TlsEndpoint = {
         path: 'wrong-host',
         description: 'Serves a TLS certificate for a different hostname.',
         examples: ['https://wrong-host.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };
 
@@ -140,8 +140,8 @@ export const emudhraIntermediate: TlsEndpoint = {
     },
     meta: {
         path: 'emudhra-intermediate',
-        description: 'Serves a certificate issued by a real eMudhra intermediate CA (EM OV TLS CA - G3C), chaining to the widely trusted emSign ECC Root CA - G3, whose private key was found to be 4. Clients that still trust this intermediate will accept the certificate. Browsers requiring Certificate Transparency will reject it regardless, as it has no SCTs.',
+        description: 'Serves a certificate issued using the compromised eMudhra intermediate CA using one of the private keys (4) exposed in October 2026.',
         examples: ['https://emudhra-intermediate.testserver.host/'],
-        group: tlsCertificateModes
+        group: tlsCertificates
     }
 };

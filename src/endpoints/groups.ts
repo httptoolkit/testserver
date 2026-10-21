@@ -111,9 +111,9 @@ export const wsGroupOrder: EndpointGroup[] = [
 ];
 
 // TLS endpoint groups
-export const tlsCertificateModes: EndpointGroup = {
-    id: 'certificate-modes',
-    name: 'Certificate Modes'
+export const tlsCertificates: EndpointGroup = {
+    id: 'certificate',
+    name: 'Certificates'
 };
 
 export const tlsProtocolNegotiation: EndpointGroup = {
@@ -147,7 +147,7 @@ export const tlsClientAuth: EndpointGroup = {
 };
 
 export const tlsGroupOrder: EndpointGroup[] = [
-    tlsCertificateModes,
+    tlsCertificates,
     tlsProtocolNegotiation,
     tlsVersions,
     tlsCiphers,

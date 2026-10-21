@@ -24,7 +24,7 @@ export interface TlsEndpoint {
 }
 
 export * from './tls/alpn-specifiers.js';
-export * from './tls/cert-modes.js';
+export * from './tls/certificates.js';
 export * from './tls/ciphers.js';
 export * from './tls/client-cert.js';
 export * from './tls/example.js';
