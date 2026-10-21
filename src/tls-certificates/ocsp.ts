@@ -7,7 +7,6 @@ const crypto = globalThis.crypto;
 
 // OIDs
 const OID_SHA1 = '1.3.14.3.2.26';
-const OID_SHA256_WITH_RSA = '1.2.840.113549.1.1.11';
 
 // CRL Reasons (RFC 5280)
 export enum RevocationReason {
@@ -127,24 +126,42 @@ async function createResponseData(
     });
 }
 
+const ECDSA_CURVE_HASHES: Record<string, string> = {
+    'P-256': 'SHA-256',
+    'P-384': 'SHA-384',
+    'P-521': 'SHA-512'
+};
+
+// RSA keys carry their hash with them, but for ECDSA we pick the digest matching the curve
+function getSigningAlgorithm(key: CryptoKey): { name: string, hash: string, namedCurve?: string } {
+    if (key.algorithm.name === 'ECDSA') {
+        const { namedCurve } = key.algorithm as EcKeyAlgorithm;
+        const hash = ECDSA_CURVE_HASHES[namedCurve];
+        if (!hash) throw new Error(`Unsupported OCSP signing curve: ${namedCurve}`);
+        // The curve sets the size of r & s when DER-encoding the signature
+        return { name: 'ECDSA', hash, namedCurve };
+    }
+    return { name: key.algorithm.name, hash: (key.algorithm as RsaHashedKeyAlgorithm).hash.name };
+}
+
 async function signResponseData(
     responseData: asn1Ocsp.ResponseData,
     issuerKey: CryptoKey
-): Promise<ArrayBuffer> {
-    // Serialize the response data
+): Promise<{ signature: ArrayBuffer, algorithm: asn1X509.AlgorithmIdentifier }> {
     const responseDataDer = asn1Schema.AsnConvert.serialize(responseData);
+    const algorithm = getSigningAlgorithm(issuerKey);
 
-    // Sign with SHA-256 + RSA
-    const signature = await crypto.subtle.sign(
-        {
-            name: "RSASSA-PKCS1-v1_5",
-            hash: "SHA-256"
-        },
-        issuerKey,
-        responseDataDer
-    );
+    const rawSignature = await crypto.subtle.sign(algorithm, issuerKey, responseDataDer);
 
-    return signature;
+    // WebCrypto produces raw r||s ECDSA signatures, but ASN.1 needs them DER-encoded
+    const signature = algorithm.name === 'ECDSA'
+        ? new x509.AsnEcSignatureFormatter().toAsnSignature(algorithm, rawSignature)!
+        : rawSignature;
+
+    return {
+        signature,
+        algorithm: new x509.AlgorithmProvider().toAsnAlgorithm(algorithm)
+    };
 }
 
 async function createBasicOcspResponse(
@@ -152,18 +169,12 @@ async function createBasicOcspResponse(
     issuerKey: CryptoKey,
     issuerCert: x509.X509Certificate
 ): Promise<asn1Ocsp.BasicOCSPResponse> {
-    const signature = await signResponseData(responseData, issuerKey);
-
-    // Create bit string from signature ArrayBuffer
-    const signatureBitString = new Uint8Array(signature);
+    const { signature, algorithm } = await signResponseData(responseData, issuerKey);
 
     const basicResponse = new asn1Ocsp.BasicOCSPResponse({
         tbsResponseData: responseData,
-        signatureAlgorithm: new asn1X509.AlgorithmIdentifier({
-            algorithm: OID_SHA256_WITH_RSA,
-            parameters: null
-        }),
-        signature: signatureBitString
+        signatureAlgorithm: algorithm,
+        signature: new Uint8Array(signature)
     });
 
     // Include the issuer certificate in the response

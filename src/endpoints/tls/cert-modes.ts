@@ -36,7 +36,7 @@ export const selfSigned: TlsEndpoint = {
     configureCertOptions() {
         return {
             requiredType: 'local',
-            selfSigned: true
+            issuer: 'self'
         };
     },
     meta: {
@@ -52,7 +52,7 @@ export const untrustedRoot: TlsEndpoint = {
     configureCertOptions() {
         return {
             requiredType: 'local',
-            selfSigned: false
+            issuer: 'local'
         };
     },
     meta: {
@@ -84,8 +84,7 @@ export const incompleteChain: TlsEndpoint = {
     sniPart: 'incomplete-chain',
     configureCertOptions() {
         return {
-            incompleteChain: true,
-            selfSigned: false
+            incompleteChain: true
         };
     },
     meta: {
@@ -127,6 +126,22 @@ export const wrongHost: TlsEndpoint = {
         path: 'wrong-host',
         description: 'Serves a TLS certificate for a different hostname.',
         examples: ['https://wrong-host.testserver.host/'],
+        group: tlsCertificateModes
+    }
+};
+
+export const emudhraIntermediate: TlsEndpoint = {
+    sniPart: 'emudhra-intermediate',
+    configureCertOptions() {
+        return {
+            requiredType: 'local',
+            issuer: 'emudhra-ov-tls-g3c'
+        };
+    },
+    meta: {
+        path: 'emudhra-intermediate',
+        description: 'Serves a certificate issued by a real eMudhra intermediate CA (EM OV TLS CA - G3C), chaining to the widely trusted emSign ECC Root CA - G3, whose private key was found to be 4. Clients that still trust this intermediate will accept the certificate. Browsers requiring Certificate Transparency will reject it regardless, as it has no SCTs.',
+        examples: ['https://emudhra-intermediate.testserver.host/'],
         group: tlsCertificateModes
     }
 };

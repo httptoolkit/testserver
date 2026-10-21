@@ -1,9 +1,17 @@
+import type { ExternalIntermediateName } from './external-intermediates.js';
+
+// Who issues the leaf: itself, our local (untrusted) CA, or a real external intermediate.
+export type CertIssuer = 'self' | 'local' | ExternalIntermediateName;
+
 export interface CertOptions {
     requiredType?: 'acme' | 'local'; // Some options are ACME/local only
 
     expired?: boolean;
     revoked?: boolean;
-    selfSigned?: boolean;
+
+    // Unset => the default CA: our public ACME CA where configured, or the local CA if not.
+    // Exclusive, so endpoints that each pick a different issuer conflict automatically.
+    issuer?: CertIssuer;
 
     overridePrefix?: string;
 
@@ -24,7 +32,6 @@ export function calculateCertCacheKey(domain: string, options: CertOptions) {
     const parts: string[] = ([
         'expired',
         'revoked',
-        'selfSigned',
         'noCommonName',
         'sha1Signature',
     ] as const).filter((k) => options[k]);
@@ -34,6 +41,9 @@ export function calculateCertCacheKey(domain: string, options: CertOptions) {
     }
     if (options.keyBits) {
         parts.push(`keyBits=${options.keyBits}`);
+    }
+    if (options.issuer) {
+        parts.push(`issuer=${options.issuer}`);
     }
 
     return `${domain}+${parts.join('+')}`;

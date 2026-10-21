@@ -233,7 +233,7 @@ const createTcpHandler = async (options: ServerOptions = {}) => {
         'untrusted-root': () => Promise.resolve(tlsConfig.ca),
         'intermediate': () => tlsConfig.localCA.getIntermediateCertificatePem(),
         'self-signed': () => tlsConfig.localCA
-            .generateCertificate(tlsConfig.rootDomain, { selfSigned: true })
+            .generateCertificate(tlsConfig.rootDomain, { issuer: 'self' })
             .then((cert) => cert.cert),
         'client-cert': () => tlsConfig.localCA.getClientCertificate()
             .then((client) => `${client.cert.trimEnd()}\n${client.key.trimEnd()}\n`)

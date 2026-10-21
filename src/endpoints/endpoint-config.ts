@@ -68,13 +68,27 @@ export function getEndpointConfig(serverNameParts: string[]) {
         throw new Error(`'no-tls' can't be combined with other endpoints in '${serverNameParts.join('--')}'`);
     }
 
+    const certConfig = certOptions as CertOptions;
+    validateCertOptions(certConfig);
+
     return {
-        certOptions: certOptions as CertOptions,
+        certOptions: certConfig,
         tlsOptions: tlsOptions as tls.SecureContextOptions,
         alpnPreferences,
         rejectTls,
         requireClientCert
     };
+}
+
+/**
+ * Combinations that merge cleanly field-by-field but that we can't actually build a
+ * certificate for. Checked here so they fail as an invalid endpoint, like any other bad
+ * combination, rather than at handshake time.
+ */
+function validateCertOptions(certOptions: CertOptions) {
+    if (certOptions.incompleteChain && certOptions.issuer === 'self') {
+        throw new Error(`Self-signed certificates have no chain to leave incomplete`);
+    }
 }
 
 /**

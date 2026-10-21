@@ -19,8 +19,8 @@ describe("TLS/cert option merge", () => {
     it("allows the same field set to the same value", () => {
         const acc: Record<string, unknown> = {};
         mergeContribution(acc, { requiredType: 'local' });
-        mergeContribution(acc, { requiredType: 'local', selfSigned: true });
-        expect(acc).to.deep.equal({ requiredType: 'local', selfSigned: true });
+        mergeContribution(acc, { requiredType: 'local', issuer: 'self' });
+        expect(acc).to.deep.equal({ requiredType: 'local', issuer: 'self' });
     });
 
     it("rejects an exclusive field set to two different values", () => {

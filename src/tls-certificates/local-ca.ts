@@ -4,7 +4,8 @@ import { createOcspResponse } from './ocsp.js';
 import * as x509 from '@peculiar/x509';
 import * as asn1X509 from '@peculiar/asn1-x509';
 import * as asn1Schema from '@peculiar/asn1-schema';
-import { CertOptions } from './cert-definitions.js';
+import { CertIssuer, calculateCertCacheKey } from './cert-definitions.js';
+import { getAllExternalIntermediates, getExternalIntermediate } from './external-intermediates.js';
 import { CertStoreBackend, CachedCertificate, certObjectId } from './cert-cache.js';
 
 const crypto = globalThis.crypto;
@@ -187,18 +188,6 @@ function isRevokedCert(cert: x509.X509Certificate): boolean {
     return false;
 }
 
-function calculateCacheKey(domain: string, options: CertOptions) {
-    const parts: string[] = ([
-        'expired',
-        'revoked',
-        'selfSigned',
-        'noCommonName',
-        'sha1Signature'
-    ] as const).filter((k: keyof CertOptions) => options[k]);
-    if (options.keyBits) parts.push(`keyBits=${options.keyBits}`);
-    return `${domain}+${parts.join('+')}`;
-}
-
 // We share a single keypair across all certificates in this process, and
 // instantiate it once when the first CA is created, because it can be
 // expensive (depending on the key length).
@@ -217,12 +206,24 @@ const KEY_PAIR_ALGO = {
 };
 
 interface CertGenerationOptions {
-    selfSigned?: boolean;
+    issuer?: CertIssuer;
     expired?: boolean;
     noCommonName?: boolean;
     keyBits?: number;
     sha1Signature?: boolean;
 }
+
+// The CA that signs a leaf, and the rest of the chain (as PEM) that's served after it.
+interface LeafIssuer {
+    cert: x509.X509Certificate;
+    signing: { key: CryptoKey, algorithm: { name: string, hash?: string } };
+    chainPem: string;
+}
+
+// Total leaf validity, measured from the backdated notBefore. Kept within the BR maximum
+// (47 days from 2029) so leaves look like modern public certs, and no client rejects them
+// for their lifetime alone.
+const LEAF_LIFESPAN_DAYS = 46;
 
 // RSASSA-PKCS1-v1_5 binds its digest to the key rather than the per-signature algorithm, so
 // to sign a certificate with a different digest (SHA-1, for the sha1-sig endpoint) we have to
@@ -529,7 +530,7 @@ export class LocalCA {
             domain = `*.${otherParts.join('.')}`;
         }
 
-        const cacheKey = calculateCacheKey(domain, options);
+        const cacheKey = calculateCertCacheKey(domain, options);
 
         const cachedCert = this.certInMemoryCache[cacheKey];
         if (cachedCert) return cachedCert;
@@ -554,12 +555,15 @@ export class LocalCA {
 
         const subjectDistinguishedName = new x509.Name(subjectJsonNameParams).toString();
 
-        const intermediate = options.selfSigned
+        const leafIssuer = options.issuer === 'self'
             ? undefined
-            : await this.getIntermediateCA();
+            : await this.getLeafIssuer(options.issuer);
+        const selfSigned = !leafIssuer;
 
-        const issuerDistinguishedName = intermediate
-            ? intermediate.cert.subject
+        // The issuer's subject is reused as-is, not re-encoded from a string, since clients like
+        // Go only chain certs whose issuer & subject names match byte for byte.
+        const issuerName = leafIssuer
+            ? leafIssuer.cert.subjectName
             : subjectDistinguishedName;
 
         const notBefore = new Date();
@@ -570,11 +574,11 @@ export class LocalCA {
             notAfter.setDate(notAfter.getDate() - 1);
         } else {
             notBefore.setDate(notBefore.getDate() - 1); // Valid from 24 hours ago
-            notAfter.setFullYear(notAfter.getFullYear() + 1); // Valid for 1 year
+            notAfter.setTime(notBefore.getTime() + LEAF_LIFESPAN_DAYS * 24 * 60 * 60 * 1000);
         }
 
-        const effectiveNotAfter = intermediate
-            ? clampNotAfter(notAfter, intermediate.cert.notAfter)
+        const effectiveNotAfter = leafIssuer
+            ? clampNotAfter(notAfter, leafIssuer.cert.notAfter)
             : notAfter;
 
         const extensions: x509.Extension[] = [];
@@ -604,22 +608,24 @@ export class LocalCA {
         ));
 
         // We don't include SubjectKeyIdentifierExtension as that's no longer recommended
-        if (intermediate) {
-            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(intermediate.cert, false));
+        if (leafIssuer) {
+            extensions.push(await x509.AuthorityKeyIdentifierExtension.create(leafIssuer.cert, false));
         }
 
-        const baseSigningKey = intermediate ? intermediate.key : leafKeyPair.privateKey as CryptoKey;
-        const signingKey = options.sha1Signature
-            ? await reimportSigningKey(baseSigningKey, 'SHA-1')
-            : baseSigningKey;
+        const issuerSigning = leafIssuer
+            ? leafIssuer.signing
+            : { key: leafKeyPair.privateKey as CryptoKey, algorithm: KEY_PAIR_ALGO };
+        const signingKey = options.sha1Signature && issuerSigning.algorithm.name === 'RSASSA-PKCS1-v1_5'
+            ? await reimportSigningKey(issuerSigning.key, 'SHA-1')
+            : issuerSigning.key;
         const signingAlgorithm = options.sha1Signature
-            ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-1' }
-            : KEY_PAIR_ALGO;
+            ? { ...issuerSigning.algorithm, hash: 'SHA-1' }
+            : issuerSigning.algorithm;
 
         const certificate = await x509.X509CertificateGenerator.create({
             serialNumber: generateSerialNumber(),
             subject: subjectDistinguishedName,
-            issuer: issuerDistinguishedName,
+            issuer: issuerName,
             notBefore,
             notAfter: effectiveNotAfter,
             signingAlgorithm,
@@ -634,17 +640,16 @@ export class LocalCA {
                 await crypto.subtle.exportKey("pkcs8", leafKeyPair.privateKey as CryptoKey),
                 "PRIVATE KEY"
             ),
-            // Serve the full chain leaf -> intermediate -> root (matching production,
-            // which sends the root too). incomplete-chain later strips back to the leaf.
-            cert: intermediate
-                ? `${certPem.trimEnd()}\n${intermediate.pem.trimEnd()}\n${this.caCertPem.trimEnd()}\n`
+            // incomplete-chain later strips this back to just the leaf
+            cert: leafIssuer
+                ? `${certPem.trimEnd()}\n${leafIssuer.chainPem}`
                 : certPem,
-            ca: options.selfSigned ? certPem : this.caCertPem // Use cached CA cert PEM
+            ca: selfSigned ? certPem : this.caCertPem // Use cached CA cert PEM
         };
 
         this.certInMemoryCache[cacheKey] = generatedCertificate;
 
-        if (options.selfSigned) {
+        if (selfSigned) {
             this.selfSignedCerts.set(certificate.serialNumber, {
                 cert: certificate,
                 key: leafKeyPair.privateKey as CryptoKey
@@ -659,10 +664,27 @@ export class LocalCA {
         return generatedCertificate;
     }
 
+    private async getLeafIssuer(issuer: Exclude<CertIssuer, 'self'> | undefined): Promise<LeafIssuer> {
+        if (issuer && issuer !== 'local') {
+            const { cert, key, signingAlgorithm, chainPem } = await getExternalIntermediate(issuer);
+            return { cert, signing: { key, algorithm: signingAlgorithm }, chainPem };
+        }
+
+        // Serve the full chain leaf -> intermediate -> root, matching production which
+        // sends the root too.
+        const intermediate = await this.getIntermediateCA();
+        return {
+            cert: intermediate.cert,
+            signing: { key: intermediate.key, algorithm: KEY_PAIR_ALGO },
+            chainPem: `${intermediate.pem.trimEnd()}\n${this.caCertPem.trimEnd()}\n`
+        };
+    }
+
     // An OCSP response must be signed by (and its CertID derived from) the cert's actual issuer,
-    // so we can only answer for certificates issued by a key we hold: one of our own CAs, or a
-    // self-signed cert we generated, which issued itself. Anything else (notably real ACME certs)
-    // gets no answer, rather than one naming an issuer unrelated to the served chain.
+    // so we can only answer for certificates issued by a key we hold: one of our own CAs, an
+    // external intermediate, or a self-signed cert we generated, which issued itself. Anything
+    // else (notably real ACME certs) gets no answer, rather than one naming an issuer unrelated
+    // to the served chain.
     private async findOcspIssuer(
         cert: x509.X509Certificate
     ): Promise<{ cert: x509.X509Certificate, key: CryptoKey } | undefined> {
@@ -671,7 +693,8 @@ export class LocalCA {
 
         const candidates = [
             ...(this.intermediateCA ? [await this.intermediateCA] : []),
-            { cert: this.caCert, key: this.caKey }
+            { cert: this.caCert, key: this.caKey },
+            ...await getAllExternalIntermediates()
         ];
 
         for (const candidate of candidates) {

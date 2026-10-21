@@ -353,7 +353,7 @@ describe("OCSP responses from the local CA", () => {
         // A self-signed cert is its own issuer, so signing with its own key is exactly what
         // RFC 6960 asks for - and we still hold that key.
         const generated = await localCA.generateCertificate('example.testserver.host', {
-            selfSigned: true
+            issuer: 'self'
         });
         const leafPem = extractLeafCertificate(generated.cert);
 
@@ -372,7 +372,7 @@ describe("OCSP responses from the local CA", () => {
 
     it("reports a self-signed revoked certificate as revoked", async () => {
         const generated = await localCA.generateCertificate('revoked.testserver.host', {
-            selfSigned: true
+            issuer: 'self'
         });
 
         const response = await localCA.getOcspResponse(toDer(extractLeafCertificate(generated.cert)));
@@ -383,7 +383,7 @@ describe("OCSP responses from the local CA", () => {
 
     it("refuses to answer for a self-signed certificate generated elsewhere", async () => {
         const foreignCert = await otherCA.generateCertificate('example.testserver.host', {
-            selfSigned: true
+            issuer: 'self'
         });
 
         const response = await localCA.getOcspResponse(toDer(extractLeafCertificate(foreignCert.cert)));

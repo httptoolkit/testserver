@@ -71,8 +71,8 @@ function getCombinedCertOptions(prefixParts: string[]): CertOptions {
 /**
  * Local-only endpoints (requiredType 'local') can't be served by a publicly-trusted CA,
  * so when one is in use we're implicitly untrusted-root. We make that explicit: we redirect
- * to *--untrusted-root in these cases. Excludes self-signed/untrusted-root itself, which
- * are already explicit by design.
+ * to *--untrusted-root in these cases. Excludes endpoints that already pick their issuer
+ * explicitly (self-signed, untrusted-root itself, or an external intermediate).
  */
 export function getLocalOnlyRedirectHost(
     prefixParts: string[],
@@ -83,8 +83,7 @@ export function getLocalOnlyRedirectHost(
     const certOptions = getCombinedCertOptions(prefixParts);
     if (
         certOptions.requiredType !== 'local' ||
-        certOptions.selfSigned ||
-        prefixParts.includes('untrusted-root')
+        certOptions.issuer !== undefined
     ) {
         return undefined;
     }
